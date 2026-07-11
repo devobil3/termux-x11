@@ -5,12 +5,14 @@ on:
   push:
     branches:
       - master
+      - feature/multi-display
     paths-ignore:
       - '**.md'
       - 'img/**'
   pull_request:
     branches:
       - master
+      - feature/multi-display
     paths-ignore:
       - '**.md'
       - 'img/**'
@@ -101,7 +103,7 @@ jobs:
 
     - name: Update Nightly Release
       uses: andelf/nightly-release@main
-      if: github.repository == 'termux/termux-x11' && github.ref == 'refs/heads/master'
+      if: github.ref == 'refs/heads/feature/multi-display' || (github.repository == 'termux/termux-x11' && github.ref == 'refs/heads/master')
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -110,7 +112,7 @@ jobs:
         draft: false
         prerelease: false
         body: |
-          This is a nightly release of the termux-x11 app.
+          This is a release of the termux-x11 app built automatically from the feature/multi-display branch.
           Based on ${{ github.sha }}
         files: |
           ./app/build/outputs/apk/debug/app-*-debug.apk

@@ -58,14 +58,20 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationCompat;
 import androidx.core.math.MathUtils;
 import androidx.viewpager.widget.ViewPager;
+import android.content.res.ColorStateList;
+import android.widget.ImageButton;
+import com.termux.x11.utils.IKeyCallback;
+import com.termux.x11.utils.IKeyInterceptor;
 
 import com.termux.x11.input.InputEventSender;
 import com.termux.x11.input.InputStub;
 import com.termux.x11.input.TouchInputHandler;
 import com.termux.x11.utils.FullscreenWorkaround;
 import com.termux.x11.utils.KeyInterceptor;
+import com.termux.x11.utils.KeyInterceptorService;
 import com.termux.x11.utils.TermuxX11ExtraKeys;
 import com.termux.x11.utils.X11ToolbarViewPager;
+import android.widget.TextView;
 
 import java.util.Map;
 
@@ -81,8 +87,180 @@ public class MainActivity extends AppCompatActivity {
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
     private Notification mNotification;
-    private final int mNotificationId = 7892;
     NotificationManager mNotificationManager;
+
+    public static final String ACTION_DISPLAY_STATUS = "com.termux.x11.ACTION_DISPLAY_STATUS";
+    public static final String ACTION_QUERY_DISPLAY_STATUS = "com.termux.x11.ACTION_QUERY_DISPLAY_STATUS";
+
+    private int mDisplayIndex = 0;
+    private int mNotificationId = 7892;
+
+    // Dashboard views
+    private final View[] mCards = new View[5];
+    private final View[] mStatusDots = new View[5];
+    private final TextView[] mStatusTexts = new TextView[5];
+    private final Button[] mSwitchButtons = new Button[5];
+    private final ImageButton[] mSettingsButtons = new ImageButton[5];
+    private final ICmdEntryInterface[] mActiveBinders = new ICmdEntryInterface[5];
+
+    // Display states
+    private final boolean[] mDisplayConnected = new boolean[5];
+    private final boolean[] mDisplayForeground = new boolean[5];
+
+    public int getDisplayIndex() {
+        return mDisplayIndex;
+    }
+
+    public void requestKeyInterceptorRecheck() {
+        if (mKeyInterceptorService != null) {
+            try {
+                mKeyInterceptorService.requestRecheck();
+            } catch (RemoteException ignored) {}
+        }
+    }
+
+    public String getDisplayPrefName() {
+        String processName = LoriePreferences.getProcessName(this);
+        if (processName.contains(":display")) {
+            String suffix = processName.substring(processName.indexOf(":display") + 8);
+            return "com.termux.x11_preferences_display" + suffix;
+        } else {
+            return getPackageName() + "_preferences";
+        }
+    }
+
+    private boolean isProcessRunning(String processNameSuffix) {
+        android.app.ActivityManager manager = (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager != null && manager.getRunningAppProcesses() != null) {
+            String targetProcess = getPackageName() + processNameSuffix;
+            for (android.app.ActivityManager.RunningAppProcessInfo processInfo : manager.getRunningAppProcesses()) {
+                if (processInfo.processName.equals(targetProcess)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void sendDisplayStatusBroadcast() {
+        Intent intent = new Intent(ACTION_DISPLAY_STATUS);
+        intent.putExtra("display_index", mDisplayIndex);
+        intent.putExtra("connected", LorieView.connected());
+        intent.putExtra("foreground", hasWindowFocus());
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+    }
+
+    private void updateDisplayStatuses() {
+        for (int i = 0; i < 5; i++) {
+            boolean isRunning = mActiveBinders[i] != null;
+            if (!isRunning) {
+                mDisplayConnected[i] = false;
+                mDisplayForeground[i] = false;
+            }
+        }
+        updateDashboardUI();
+    }
+
+    private void updateDashboardUI() {
+        if (mDisplayIndex != -1) return;
+
+        runOnUiThread(() -> {
+            for (int i = 0; i < 5; i++) {
+                if (mCards[i] == null) continue;
+
+                boolean isRunning = mActiveBinders[i] != null;
+
+                if (!isRunning) {
+                    mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#757575")));
+                    mStatusTexts[i].setText("Offline");
+                    mStatusTexts[i].setTextColor(Color.parseColor("#94A3B8"));
+                    mSwitchButtons[i].setVisibility(View.GONE);
+                } else if (mDisplayConnected[i]) {
+                    mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#4CAF50")));
+                    mStatusTexts[i].setText("Connected");
+                    mStatusTexts[i].setTextColor(Color.parseColor("#4CAF50"));
+                    mSwitchButtons[i].setVisibility(View.VISIBLE);
+                } else {
+                    mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#2196F3")));
+                    mStatusTexts[i].setText("Running in Background");
+                    mStatusTexts[i].setTextColor(Color.parseColor("#2196F3"));
+                    mSwitchButtons[i].setVisibility(View.VISIBLE);
+                }
+            }
+        });
+    }
+
+    private final BroadcastReceiver displayStatusReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ACTION_DISPLAY_STATUS.equals(intent.getAction())) {
+                int index = intent.getIntExtra("display_index", -1);
+                if (index >= 0 && index < 5) {
+                    mDisplayConnected[index] = intent.getBooleanExtra("connected", false);
+                    mDisplayForeground[index] = intent.getBooleanExtra("foreground", false);
+                    updateDashboardUI();
+                }
+            }
+        }
+    };
+
+    private final BroadcastReceiver queryReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (ACTION_QUERY_DISPLAY_STATUS.equals(intent.getAction())) {
+                sendDisplayStatusBroadcast();
+            }
+        }
+    };
+
+    private IKeyInterceptor mKeyInterceptorService = null;
+    private final IKeyCallback mKeyCallback = new IKeyCallback.Stub() {
+        @Override
+        public boolean onKeyEvent(KeyEvent event) {
+            return handleKey(event);
+        }
+
+        @Override
+        public boolean shouldIntercept() {
+            return shouldInterceptKeys();
+        }
+    };
+
+    private final android.content.ServiceConnection mKeyInterceptorConnection = new android.content.ServiceConnection() {
+        @Override
+        public void onServiceConnected(android.content.ComponentName name, IBinder service) {
+            mKeyInterceptorService = IKeyInterceptor.Stub.asInterface(service);
+            try {
+                mKeyInterceptorService.registerCallback(mKeyCallback);
+            } catch (RemoteException e) {
+                Log.e("MainActivity", "Failed to register key callback", e);
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(android.content.ComponentName name) {
+            mKeyInterceptorService = null;
+        }
+    };
+
+    private void bindKeyInterceptor() {
+        if (mDisplayIndex > 0) {
+            Intent intent = new Intent(this, KeyInterceptorService.class);
+            intent.setAction("com.termux.x11.utils.IKeyInterceptor");
+            bindService(intent, mKeyInterceptorConnection, Context.BIND_AUTO_CREATE);
+        }
+    }
+
+    private void unbindKeyInterceptor() {
+        if (mKeyInterceptorService != null) {
+            try {
+                mKeyInterceptorService.unregisterCallback(mKeyCallback);
+            } catch (RemoteException ignored) {}
+            unbindService(mKeyInterceptorConnection);
+            mKeyInterceptorService = null;
+        }
+    }
     static InputMethodManager inputMethodManager;
     private static boolean showIMEWhileExternalConnected = true;
     private static boolean externalKeyboardConnected = false;
@@ -102,8 +280,46 @@ public class MainActivity extends AppCompatActivity {
         public void onReceive(Context context, Intent intent) {
             prefs.recheckStoringSecondaryDisplayPreferences();
             if (ACTION_START.equals(intent.getAction())) {
+                int displayIndex = intent.getIntExtra("display_index", 0);
+                
+                // Track all active binders in all processes (for switcher/status queries)
                 try {
-                    Log.v("LorieBroadcastReceiver", "Got new ACTION_START intent");
+                    Bundle bundle = intent.getBundleExtra(null);
+                    IBinder binder = bundle != null ? bundle.getBinder(null) : null;
+                    if (binder != null) {
+                        ICmdEntryInterface s = ICmdEntryInterface.Stub.asInterface(binder);
+                        if (s != null) {
+                            mActiveBinders[displayIndex] = s;
+                            final int idx = displayIndex;
+                            s.asBinder().linkToDeath(() -> {
+                                mActiveBinders[idx] = null;
+                                runOnUiThread(() -> {
+                                    updateDisplayStatuses();
+                                    // Update quick switch buttons if switcher dock is visible
+                                    View switcherDock = findViewById(R.id.floating_switcher_dock);
+                                    if (switcherDock != null && switcherDock.getVisibility() == View.VISIBLE) {
+                                        updateQuickSwitchButtons(
+                                            findViewById(R.id.btn_quick_switch_0),
+                                            findViewById(R.id.btn_quick_switch_1),
+                                            findViewById(R.id.btn_quick_switch_2),
+                                            findViewById(R.id.btn_quick_switch_3),
+                                            findViewById(R.id.btn_quick_switch_4)
+                                        );
+                                    }
+                                });
+                            }, 0);
+                            runOnUiThread(() -> updateDisplayStatuses());
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e("MainActivity", "Error registering binder for display " + displayIndex, e);
+                }
+
+                if (mDisplayIndex == -1 || displayIndex != mDisplayIndex) {
+                    return;
+                }
+                try {
+                    Log.v("LorieBroadcastReceiver", "Got new ACTION_START intent for display " + displayIndex);
                     onReceiveConnection(intent);
                 } catch (Exception e) {
                     Log.e("MainActivity", "Something went wrong while we extracted connection details from binder.", e);
@@ -158,6 +374,16 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        String processName = LoriePreferences.getProcessName(this);
+        if (processName.contains(":display")) {
+            try {
+                mDisplayIndex = Integer.parseInt(processName.substring(processName.indexOf(":display") + 8));
+            } catch (NumberFormatException ignored) {}
+        } else {
+            mDisplayIndex = -1; // Dashboard
+        }
+        mNotificationId = 7892 + mDisplayIndex;
+
         prefs = new Prefs(this);
         int modeValue = Integer.parseInt(prefs.touchMode.get()) - 1;
         if (modeValue > 2)
@@ -173,7 +399,41 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.main_activity);
 
         frm = findViewById(R.id.frame);
-        findViewById(R.id.preferences_button).setOnClickListener((l) -> startActivity(new Intent(this, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}));
+
+        if (mDisplayIndex == -1) {
+            for (int i = 0; i < 5; i++) {
+                int cardId = getResources().getIdentifier("card_display_" + i, "id", getPackageName());
+                int dotId = getResources().getIdentifier("status_dot_" + i, "id", getPackageName());
+                int textId = getResources().getIdentifier("status_text_" + i, "id", getPackageName());
+                int switchId = getResources().getIdentifier("btn_switch_" + i, "id", getPackageName());
+                int settingsId = getResources().getIdentifier("btn_settings_" + i, "id", getPackageName());
+
+                mCards[i] = findViewById(cardId);
+                mStatusDots[i] = findViewById(dotId);
+                mStatusTexts[i] = findViewById(textId);
+                mSwitchButtons[i] = findViewById(switchId);
+                mSettingsButtons[i] = findViewById(settingsId);
+
+                final int index = i;
+                mSettingsButtons[i].setOnClickListener(v -> {
+                    Intent prefIntent = new Intent(this, LoriePreferences.class);
+                    prefIntent.setAction(Intent.ACTION_MAIN);
+                    String prefName = "com.termux.x11_preferences_display" + index;
+                    prefIntent.putExtra("display_pref_name", prefName);
+                    startActivity(prefIntent);
+                });
+
+                mSwitchButtons[i].setOnClickListener(v -> {
+                    String className = "com.termux.x11.MainActivity" + index;
+                    Intent switchIntent = new Intent();
+                    switchIntent.setClassName(getPackageName(), className);
+                    switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(switchIntent);
+                });
+            }
+            registerReceiver(displayStatusReceiver, new IntentFilter(ACTION_DISPLAY_STATUS), SDK_INT >= VERSION_CODES.TIRAMISU ? RECEIVER_EXPORTED : 0);
+        }
+
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
 
@@ -214,6 +474,8 @@ public class MainActivity extends AppCompatActivity {
             addAction(ACTION_CUSTOM);
         }}, SDK_INT >= VERSION_CODES.TIRAMISU ? RECEIVER_EXPORTED : 0);
 
+        registerReceiver(queryReceiver, new IntentFilter(ACTION_QUERY_DISPLAY_STATUS), SDK_INT >= VERSION_CODES.TIRAMISU ? RECEIVER_EXPORTED : 0);
+
         inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
 
         // Taken from Stackoverflow answer https://stackoverflow.com/questions/7417123/android-how-to-adjust-layout-in-full-screen-mode-when-softkeyboard-is-visible/7509285#
@@ -222,7 +484,7 @@ public class MainActivity extends AppCompatActivity {
         mNotification = buildNotification();
         mNotificationManager.notify(mNotificationId, mNotification);
 
-        if (tryConnect()) {
+        if (mDisplayIndex >= 0 && tryConnect()) {
             final View content = findViewById(android.R.id.content);
             content.getViewTreeObserver().addOnPreDrawListener(mOnPredrawListener);
             handler.postDelayed(this::finishStartupDraw, 500);
@@ -233,6 +495,7 @@ public class MainActivity extends AppCompatActivity {
 
         initStylusAuxButtons();
         initMouseAuxButtons();
+        initFloatingSwitcher();
 
         if (SDK_INT >= VERSION_CODES.TIRAMISU
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PERMISSION_GRANTED
@@ -240,13 +503,31 @@ public class MainActivity extends AppCompatActivity {
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 0);
         }
 
+        bindKeyInterceptor();
+        sendDisplayStatusBroadcast();
+
         onReceiveConnection(getIntent());
         findViewById(android.R.id.content).addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> makeSureHelpersAreVisibleAndInScreenBounds());
+        clientConnectedStateChanged();
     }
 
     @Override
     protected void onDestroy() {
         unregisterReceiver(receiver);
+        if (mDisplayIndex == -1) {
+            unregisterReceiver(displayStatusReceiver);
+        }
+        unregisterReceiver(queryReceiver);
+        unbindKeyInterceptor();
+
+        // Notify dashboard we are offline
+        Intent intent = new Intent(ACTION_DISPLAY_STATUS);
+        intent.putExtra("display_index", mDisplayIndex);
+        intent.putExtra("connected", false);
+        intent.putExtra("foreground", false);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+
         super.onDestroy();
     }
 
@@ -362,10 +643,144 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
+    void initFloatingSwitcher() {
+        final ViewPager pager = getTerminalToolbarViewPager();
+        final LinearLayout switcherLayout = findViewById(R.id.floating_switcher_layout);
+        if (switcherLayout == null) return;
+
+        final View toggleBtn = findViewById(R.id.btn_switcher_toggle);
+        final TextView txtDisplayIndex = findViewById(R.id.txt_switcher_display_index);
+        if (txtDisplayIndex != null) {
+            txtDisplayIndex.setText(String.valueOf(mDisplayIndex));
+        }
+        final LinearLayout dockLayout = findViewById(R.id.floating_switcher_dock);
+        final ImageButton dashboardBtn = findViewById(R.id.btn_switch_to_dashboard);
+        final Button quick0 = findViewById(R.id.btn_quick_switch_0);
+        final Button quick1 = findViewById(R.id.btn_quick_switch_1);
+        final Button quick2 = findViewById(R.id.btn_quick_switch_2);
+        final Button quick3 = findViewById(R.id.btn_quick_switch_3);
+        final Button quick4 = findViewById(R.id.btn_quick_switch_4);
+
+        toggleBtn.setOnClickListener(v -> {
+            boolean isDockVisible = dockLayout.getVisibility() == View.VISIBLE;
+            if (isDockVisible) {
+                dockLayout.setVisibility(View.GONE);
+            } else {
+                updateQuickSwitchButtons(quick0, quick1, quick2, quick3, quick4);
+                dockLayout.setVisibility(View.VISIBLE);
+                
+                // Make sure it remains inside screen limits when expanding
+                float maxX = frm.getWidth() - switcherLayout.getWidth();
+                float maxY = frm.getHeight() - switcherLayout.getHeight();
+                if (pager.getVisibility() == View.VISIBLE)
+                    maxY -= pager.getHeight();
+                switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), 0, maxX));
+                switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), 0, maxY));
+            }
+        });
+
+        dashboardBtn.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        quick0.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity0");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        quick1.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity1");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        quick2.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity2");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        quick3.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity3");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        quick4.setOnClickListener(v -> {
+            Intent switchIntent = new Intent();
+            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity4");
+            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(switchIntent);
+            dockLayout.setVisibility(View.GONE);
+        });
+
+        toggleBtn.setOnLongClickListener(v -> {
+            v.startDragAndDrop(ClipData.newPlainText("", ""), new View.DragShadowBuilder(toggleBtn) {
+                @Override
+                public void onDrawShadow(@NonNull Canvas canvas) {}
+            }, null, View.DRAG_FLAG_GLOBAL);
+
+            frm.setOnDragListener((v2, event) -> {
+                float maxX = frm.getWidth() - switcherLayout.getWidth();
+                float maxY = frm.getHeight() - switcherLayout.getHeight();
+                if (pager.getVisibility() == View.VISIBLE)
+                    maxY -= pager.getHeight();
+
+                switch (event.getAction()) {
+                    case DragEvent.ACTION_DRAG_LOCATION:
+                        float dX = event.getX() - toggleBtn.getWidth() / 2.0f;
+                        float dY = event.getY() - toggleBtn.getHeight() / 2.0f;
+                        switcherLayout.setX(MathUtils.clamp(dX, 0, maxX));
+                        switcherLayout.setY(MathUtils.clamp(dY, 0, maxY));
+                        break;
+                    case DragEvent.ACTION_DRAG_ENDED:
+                        switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), 0, maxX));
+                        switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), 0, maxY));
+                        break;
+                }
+                return true;
+            });
+            return true;
+        });
+
+        updateFloatingSwitcherVisibility();
+    }
+
+    private void updateQuickSwitchButtons(Button q0, Button q1, Button q2, Button q3, Button q4) {
+        q0.setVisibility((mDisplayIndex != 0 && mActiveBinders[0] != null) ? View.VISIBLE : View.GONE);
+        q1.setVisibility((mDisplayIndex != 1 && mActiveBinders[1] != null) ? View.VISIBLE : View.GONE);
+        q2.setVisibility((mDisplayIndex != 2 && mActiveBinders[2] != null) ? View.VISIBLE : View.GONE);
+        q3.setVisibility((mDisplayIndex != 3 && mActiveBinders[3] != null) ? View.VISIBLE : View.GONE);
+        q4.setVisibility((mDisplayIndex != 4 && mActiveBinders[4] != null) ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateFloatingSwitcherVisibility() {
+        LinearLayout switcherLayout = findViewById(R.id.floating_switcher_layout);
+        if (switcherLayout != null) {
+            boolean connected = LorieView.connected();
+            switcherLayout.setVisibility(connected ? View.VISIBLE : View.GONE);
+        }
+    }
+
     private void makeSureHelpersAreVisibleAndInScreenBounds() {
         final ViewPager pager = getTerminalToolbarViewPager();
         View mouseAuxButtons = findViewById(R.id.mouse_buttons);
         View stylusAuxButtons = findViewById(R.id.mouse_helper_visibility);
+        View switcherLayout = findViewById(R.id.floating_switcher_layout);
         int maxYDecrement = (pager.getVisibility() == View.VISIBLE) ? pager.getHeight() : 0;
 
         mouseAuxButtons.setX(MathUtils.clamp(mouseAuxButtons.getX(), frm.getX(), frm.getX() + frm.getWidth() - mouseAuxButtons.getWidth()));
@@ -373,6 +788,11 @@ public class MainActivity extends AppCompatActivity {
 
         stylusAuxButtons.setX(MathUtils.clamp(stylusAuxButtons.getX(), frm.getX(), frm.getX() + frm.getWidth() - stylusAuxButtons.getWidth()));
         stylusAuxButtons.setY(MathUtils.clamp(stylusAuxButtons.getY(), frm.getY(), frm.getY() + frm.getHeight() - stylusAuxButtons.getHeight() - maxYDecrement));
+
+        if (switcherLayout != null && switcherLayout.getVisibility() == View.VISIBLE && switcherLayout.getWidth() > 0) {
+            switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), frm.getX(), frm.getX() + frm.getWidth() - switcherLayout.getWidth()));
+            switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), frm.getY(), frm.getY() + frm.getHeight() - switcherLayout.getHeight() - maxYDecrement));
+        }
     }
 
     public void toggleStylusAuxButtons() {
@@ -499,6 +919,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void onReceiveConnection(Intent intent) {
+        if (intent != null) {
+            int displayIndex = intent.getIntExtra("display_index", 0);
+            if (displayIndex != mDisplayIndex) {
+                Log.w("MainActivity", "Received connection intent for display " + displayIndex + " but current display is " + mDisplayIndex);
+                return;
+            }
+        }
         Bundle bundle = intent == null ? null : intent.getBundleExtra(null);
         IBinder ibinder = bundle == null ? null : bundle.getBinder(null);
         if (ibinder == null)
@@ -612,15 +1039,28 @@ public class MainActivity extends AppCompatActivity {
     public void onResume() {
         super.onResume();
 
+        if (mDisplayIndex == -1) {
+            updateDisplayStatuses();
+            sendBroadcast(new Intent(ACTION_QUERY_DISPLAY_STATUS).setPackage(getPackageName()));
+            return;
+        }
+
         mNotification = buildNotification();
         mNotificationManager.notify(mNotificationId, mNotification);
 
         setTerminalToolbarView();
         getLorieView().requestFocus();
+
+        sendDisplayStatusBroadcast();
     }
 
     @Override
     public void onPause() {
+        if (mDisplayIndex == -1) {
+            super.onPause();
+            return;
+        }
+
         inputMethodManager.hideSoftInputFromWindow(getWindow().getDecorView().getRootView().getWindowToken(), 0);
 
         for (StatusBarNotification notification: mNotificationManager.getActiveNotifications())
@@ -628,6 +1068,8 @@ public class MainActivity extends AppCompatActivity {
                 mNotificationManager.cancel(mNotificationId);
 
         super.onPause();
+
+        sendDisplayStatusBroadcast();
     }
 
     public LorieView getLorieView() {
@@ -689,8 +1131,10 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("ObsoleteSdkInt")
     Notification buildNotification() {
+        int displayIndex = mNotificationId - 7892;
+        String title = "Termux:X11" + (displayIndex > 0 ? " (Display :" + displayIndex + ")" : "");
         NotificationCompat.Builder builder =  new NotificationCompat.Builder(this, getNotificationChannel(mNotificationManager))
-                .setContentTitle("Termux:X11")
+                .setContentTitle(title)
                 .setSmallIcon(R.drawable.ic_x11_icon)
                 .setContentText(getResources().getText(R.string.lorie_notification_content_text))
                 .setOngoing(true)
@@ -733,6 +1177,7 @@ public class MainActivity extends AppCompatActivity {
         super.onWindowFocusChanged(hasFocus);
         KeyInterceptor.recheck();
         prefs.recheckStoringSecondaryDisplayPreferences();
+        sendDisplayStatusBroadcast();
         Window window = getWindow();
         View decorView = window.getDecorView();
         boolean fullscreen = prefs.fullscreen.get();
@@ -852,12 +1297,38 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressWarnings("SameParameterValue")
     void clientConnectedStateChanged() {
+        if (mDisplayIndex == -1) {
+            runOnUiThread(() -> {
+                findViewById(R.id.stub).setVisibility(View.VISIBLE);
+                View offlineView = findViewById(R.id.offline_display_view);
+                if (offlineView != null) offlineView.setVisibility(View.GONE);
+                getLorieView().setVisibility(View.GONE);
+                findViewById(R.id.mouse_buttons).setVisibility(View.GONE);
+                updateFloatingSwitcherVisibility();
+                updateDisplayStatuses();
+            });
+            return;
+        }
+
         runOnUiThread(()-> {
             boolean connected = LorieView.connected();
             setTerminalToolbarView();
             findViewById(R.id.mouse_buttons).setVisibility(prefs.showMouseHelper.get() && "1".equals(prefs.touchMode.get()) && connected ? View.VISIBLE : View.GONE);
-            findViewById(R.id.stub).setVisibility(connected?View.INVISIBLE:View.VISIBLE);
+            
+            // For secondary display activities, Dashboard stub is always GONE
+            findViewById(R.id.stub).setVisibility(View.GONE);
+            
+            View offlineView = findViewById(R.id.offline_display_view);
+            if (offlineView != null) {
+                offlineView.setVisibility(connected ? View.GONE : View.VISIBLE);
+                TextView offlineDesc = findViewById(R.id.txt_offline_display_desc);
+                if (offlineDesc != null) {
+                    offlineDesc.setText("Display " + mDisplayIndex + " is currently offline.\nStart the display server from Termux.");
+                }
+            }
+            
             getLorieView().setVisibility(connected?View.VISIBLE:View.INVISIBLE);
+            updateFloatingSwitcherVisibility();
 
             // We should recover connection in the case if file descriptor for some reason was broken...
             if (!connected)
@@ -866,6 +1337,11 @@ public class MainActivity extends AppCompatActivity {
                 getLorieView().setPointerIcon(PointerIcon.getSystemIcon(this, PointerIcon.TYPE_NULL));
 
             onWindowFocusChanged(hasWindowFocus());
+
+            sendDisplayStatusBroadcast();
+            if (mDisplayIndex == -1) {
+                updateDisplayStatuses();
+            }
         });
     }
 

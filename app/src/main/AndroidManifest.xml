@@ -36,6 +36,56 @@
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
         <activity
+            android:name=".MainActivity0"
+            android:process=":display0"
+            android:taskAffinity=".MainActivity0"
+            android:launchMode="singleInstance"
+            android:supportsPictureInPicture="true"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="true" />
+        <activity
+            android:name=".MainActivity1"
+            android:process=":display1"
+            android:taskAffinity=".MainActivity1"
+            android:launchMode="singleInstance"
+            android:supportsPictureInPicture="true"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="true" />
+        <activity
+            android:name=".MainActivity2"
+            android:process=":display2"
+            android:taskAffinity=".MainActivity2"
+            android:launchMode="singleInstance"
+            android:supportsPictureInPicture="true"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="true" />
+        <activity
+            android:name=".MainActivity3"
+            android:process=":display3"
+            android:taskAffinity=".MainActivity3"
+            android:launchMode="singleInstance"
+            android:supportsPictureInPicture="true"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="true" />
+        <activity
+            android:name=".MainActivity4"
+            android:process=":display4"
+            android:taskAffinity=".MainActivity4"
+            android:launchMode="singleInstance"
+            android:supportsPictureInPicture="true"
+            android:configChanges="fontScale|orientation|screenSize|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|screenLayout|touchscreen|uiMode|smallestScreenSize|density"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="stateHidden"
+            android:exported="true" />
+        <activity
             android:theme="@style/Theme.AppCompat.DayNight"
             android:excludeFromRecents="true"
             android:name=".LoriePreferences"
@@ -62,6 +112,13 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <service android:name=".utils.KeyInterceptorService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.termux.x11.utils.IKeyInterceptor" />
+            </intent-filter>
         </service>
 
         <receiver android:name=".LoriePreferences$Receiver" android:exported="true" tools:ignore="ExportedReceiver" android:enabled="true">

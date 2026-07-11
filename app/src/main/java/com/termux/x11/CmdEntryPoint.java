@@ -32,7 +32,7 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     public static final String ACTION_START = "com.termux.x11.CmdEntryPoint.ACTION_START";
     static final Handler handler;
     public static Context ctx;
-    private final Intent intent = createIntent();
+    private Intent intent = null;
 
     /**
      * Command-line entry point.
@@ -46,6 +46,9 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
     }
 
     CmdEntryPoint(String[] args) {
+        int displayIndex = parseDisplayIndex(args);
+        intent = createIntent(displayIndex);
+
         if (!start(args))
             System.exit(1);
 
@@ -53,22 +56,40 @@ public class CmdEntryPoint extends ICmdEntryInterface.Stub {
         sendBroadcastDelayed();
     }
 
-    @SuppressLint({"WrongConstant", "PrivateApi"})
-    private Intent createIntent() {
+    private static int parseDisplayIndex(String[] args) {
+        if (args != null) {
+            for (String arg : args) {
+                if (arg.startsWith(":") && arg.length() > 1) {
+                    try {
+                        return Integer.parseInt(arg.substring(1));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        return 0;
+    }
+
+    private Intent createIntent(int displayIndex) {
         String targetPackage = getenv("TERMUX_X11_OVERRIDE_PACKAGE");
         if (targetPackage == null)
             targetPackage = "com.termux.x11";
-        // We should not care about multiple instances, it should be called only by `Termux:X11` app
-        // which is single instance...
+        
         Bundle bundle = new Bundle();
         bundle.putBinder(null, this);
 
         Intent intent = new Intent(ACTION_START);
         intent.putExtra(null, bundle);
+        intent.putExtra("display_index", displayIndex);
         intent.setPackage(targetPackage);
 
+        // Do not set class name on the broadcast intent, otherwise it won't be delivered to dynamically registered receivers.
+        // String className = (displayIndex > 0 && displayIndex <= 4) ? "com.termux.x11.MainActivity" + displayIndex : "com.termux.x11.MainActivity";
+        // intent.setClassName(targetPackage, className);
+
+        int flags = Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK;
         if (getuid() == 0 || getuid() == 2000)
-            intent.setFlags(0x00400000 /* FLAG_RECEIVER_FROM_SHELL */);
+            flags |= 0x00400000 /* FLAG_RECEIVER_FROM_SHELL */;
+        intent.setFlags(flags);
 
         return intent;
     }

@@ -12,6 +12,11 @@ import android.view.accessibility.AccessibilityEvent;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 
+import android.content.Intent;
+import android.os.IBinder;
+import android.os.RemoteCallbackList;
+import android.os.RemoteException;
+
 import com.termux.x11.MainActivity;
 
 import java.util.LinkedHashSet;
@@ -23,6 +28,38 @@ public class KeyInterceptor extends AccessibilityService {
     private static KeyInterceptor self;
     private static boolean launchedAutomatically = false;
     private boolean enabled = false;
+
+    private final RemoteCallbackList<IKeyCallback> mCallbacks = new RemoteCallbackList<>();
+
+    private final IKeyInterceptor.Stub mBinder = new IKeyInterceptor.Stub() {
+        @Override
+        public void registerCallback(IKeyCallback callback) {
+            if (callback != null) {
+                mCallbacks.register(callback);
+                recheck();
+            }
+        }
+
+        @Override
+        public void unregisterCallback(IKeyCallback callback) {
+            if (callback != null) {
+                mCallbacks.unregister(callback);
+                recheck();
+            }
+        }
+
+        @Override
+        public void requestRecheck() {
+            recheck();
+        }
+    };
+
+    public static IBinder getBinder() {
+        if (self != null) {
+            return self.mBinder;
+        }
+        return null;
+    }
 
     public KeyInterceptor() {
         self = this;
@@ -82,9 +119,30 @@ public class KeyInterceptor extends AccessibilityService {
     }
 
     public static void recheck() {
+        if (self == null) return;
+        boolean anyIntercept = false;
+
+        int n = self.mCallbacks.beginBroadcast();
+        try {
+            for (int i = 0; i < n; i++) {
+                try {
+                    if (self.mCallbacks.getBroadcastItem(i).shouldIntercept()) {
+                        anyIntercept = true;
+                        break;
+                    }
+                } catch (RemoteException ignored) {}
+            }
+        } finally {
+            self.mCallbacks.finishBroadcast();
+        }
+
         MainActivity a = MainActivity.getInstance();
-        boolean shouldBeEnabled = (a != null && self != null) && (a.hasWindowFocus() || !self.pressedKeys.isEmpty());
-        if (self != null && shouldBeEnabled != self.enabled) {
+        if (a != null && a.shouldInterceptKeys()) {
+            anyIntercept = true;
+        }
+
+        boolean shouldBeEnabled = anyIntercept || !self.pressedKeys.isEmpty();
+        if (shouldBeEnabled != self.enabled) {
             if (shouldBeEnabled) {
                 handler.removeCallbacks(disableImmediatelyCallback);
                 android.util.Log.d("KeyInterceptor", "enabling interception service");
@@ -99,6 +157,30 @@ public class KeyInterceptor extends AccessibilityService {
 
     @Override
     public boolean onKeyEvent(KeyEvent event) {
+        int n = mCallbacks.beginBroadcast();
+        try {
+            for (int i = 0; i < n; i++) {
+                IKeyCallback callback = mCallbacks.getBroadcastItem(i);
+                try {
+                    if (callback.shouldIntercept()) {
+                        boolean result = callback.onKeyEvent(event);
+                        if (result) {
+                            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                                pressedKeys.add(event.getKeyCode());
+                            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                                pressedKeys.remove(event.getKeyCode());
+                            }
+                            return true;
+                        }
+                    }
+                } catch (RemoteException e) {
+                    android.util.Log.e("KeyInterceptor", "Remote callback error", e);
+                }
+            }
+        } finally {
+            mCallbacks.finishBroadcast();
+        }
+
         boolean ret = false;
         MainActivity instance = MainActivity.getInstance();
 

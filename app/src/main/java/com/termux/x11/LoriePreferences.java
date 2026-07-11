@@ -82,6 +82,22 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
     static final String ACTION_PREFERENCES_CHANGED = "com.termux.x11.ACTION_PREFERENCES_CHANGED";
     private static Prefs prefs = null;
 
+    public static String getProcessName(Context ctx) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return android.app.Application.getProcessName();
+        }
+        int pid = android.os.Process.myPid();
+        android.app.ActivityManager manager = (android.app.ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager != null && manager.getRunningAppProcesses() != null) {
+            for (android.app.ActivityManager.RunningAppProcessInfo processInfo : manager.getRunningAppProcesses()) {
+                if (processInfo.pid == pid) {
+                    return processInfo.processName;
+                }
+            }
+        }
+        return ctx.getPackageName();
+    }
+
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @SuppressLint("UnspecifiedRegisterReceiverFlag")
         @Override
@@ -846,7 +862,20 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         private PrefsProto() {} // No instantiation allowed
         protected PrefsProto(Context ctx) {
             this.ctx = ctx;
-            builtInDisplayPreferences = PreferenceManager.getDefaultSharedPreferences(ctx);
+            String prefName = null;
+            if (ctx instanceof android.app.Activity) {
+                prefName = ((android.app.Activity) ctx).getIntent().getStringExtra("display_pref_name");
+            }
+            if (prefName == null) {
+                String processName = getProcessName(ctx);
+                if (processName.contains(":display")) {
+                    String suffix = processName.substring(processName.indexOf(":display") + 8);
+                    prefName = "com.termux.x11_preferences_display" + suffix;
+                } else {
+                    prefName = ctx.getPackageName() + "_preferences";
+                }
+            }
+            builtInDisplayPreferences = ctx.getSharedPreferences(prefName, Context.MODE_PRIVATE);
             secondaryDisplayPreferences = ctx.getSharedPreferences("secondary", Context.MODE_PRIVATE);
             recheckStoringSecondaryDisplayPreferences();
         }
