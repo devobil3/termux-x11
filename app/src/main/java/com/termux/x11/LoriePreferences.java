@@ -81,6 +81,9 @@ import java.util.regex.PatternSyntaxException;
 public class LoriePreferences extends AppCompatActivity implements PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
     static final String ACTION_PREFERENCES_CHANGED = "com.termux.x11.ACTION_PREFERENCES_CHANGED";
     private static Prefs prefs = null;
+    protected String mSourcePrefName;
+    private AlertDialog mManageTemplatesDialog;
+    public boolean mHasChanges = false;
 
     public static String getProcessName(Context ctx) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -139,6 +142,17 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        mSourcePrefName = getIntent().getStringExtra("display_pref_name");
+        if (mSourcePrefName == null) {
+            mSourcePrefName = getPackageName() + "_preferences";
+        }
+        
+        initializeDisplayPrefsIfEmpty(mSourcePrefName);
+        
+        // Clone source preferences to temporary session file
+        cloneSharedPreferences(mSourcePrefName, "com.termux.x11_temp_session");
+        getIntent().putExtra("display_pref_name", "com.termux.x11_temp_session");
+
         super.onCreate(savedInstanceState);
         prefs = new Prefs(this);
         getSupportFragmentManager().beginTransaction().replace(android.R.id.content, new LoriePreferenceFragment(null)).commit();
@@ -148,12 +162,51 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
             actionBar.setDisplayHomeAsUpEnabled(true);
             actionBar.setHomeButtonEnabled(true);
         }
+        updateTitle("Preferences");
 
         Uri ENABLED_ACCESSIBILITY_SERVICES = Settings.Secure.getUriFor(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         Uri ACCESSIBILITY_ENABLED = Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED);
 
         getContentResolver().registerContentObserver(ENABLED_ACCESSIBILITY_SERVICES, true, accessibilityObserver);
         getContentResolver().registerContentObserver(ACCESSIBILITY_ENABLED, true, accessibilityObserver);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        
+        mSourcePrefName = intent.getStringExtra("display_pref_name");
+        if (mSourcePrefName == null) {
+            mSourcePrefName = getPackageName() + "_preferences";
+        }
+        
+        initializeDisplayPrefsIfEmpty(mSourcePrefName);
+        
+        cloneSharedPreferences(mSourcePrefName, "com.termux.x11_temp_session");
+        intent.putExtra("display_pref_name", "com.termux.x11_temp_session");
+        
+        prefs = new Prefs(this);
+        updateTitle("Preferences");
+        getSupportFragmentManager().beginTransaction().replace(android.R.id.content, new LoriePreferenceFragment(null)).commit();
+    }
+
+    public void updateTitle(CharSequence fragmentTitle) {
+        ActionBar actionBar = getSupportActionBar();
+        if (actionBar != null) {
+            String prefix = "Global";
+            if (mSourcePrefName.contains("_display")) {
+                String suffix = mSourcePrefName.substring(mSourcePrefName.indexOf("_display") + 8);
+                SharedPreferences displayPrefs = getSharedPreferences(mSourcePrefName, MODE_PRIVATE);
+                String customLabel = displayPrefs.getString("displayCustomLabel", "");
+                if (!customLabel.isEmpty()) {
+                    prefix = customLabel;
+                } else {
+                    prefix = "Display " + suffix;
+                }
+            }
+            actionBar.setTitle(prefix + " - " + fragmentTitle);
+        }
     }
 
     @SuppressLint("WrongConstant")
@@ -171,19 +224,754 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
     }
 
     @Override
+    public boolean onCreateOptionsMenu(android.view.Menu menu) {
+        if (getSupportFragmentManager().getBackStackEntryCount() == 0) {
+            MenuItem saveTemplateItem = menu.add(android.view.Menu.NONE, 1001, android.view.Menu.NONE, "Save Template");
+            saveTemplateItem.setIcon(android.R.drawable.ic_menu_add);
+            saveTemplateItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+            
+            MenuItem manageItem = menu.add(android.view.Menu.NONE, 1002, android.view.Menu.NONE, "Templates");
+            manageItem.setIcon(android.R.drawable.ic_menu_manage);
+            manageItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+
+            MenuItem saveItem = menu.add(android.view.Menu.NONE, 1005, android.view.Menu.NONE, "Save");
+            saveItem.setIcon(android.R.drawable.ic_menu_save);
+            saveItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        }
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
 
         if (id == android.R.id.home) {
             if (getSupportFragmentManager().getBackStackEntryCount() == 0)
-                finish();
-            else
                 onBackPressed();
-
+            else {
+                getSupportFragmentManager().popBackStack();
+                handler.postDelayed(this::invalidateOptionsMenu, 100);
+            }
+            return true;
+        } else if (id == 1001) {
+            showSaveTemplateDialog();
+            return true;
+        } else if (id == 1002) {
+            showManageTemplatesDialog();
+            return true;
+        } else if (id == 1005) {
+            saveCurrentPreferences();
             return true;
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+    private void showUnsavedChangesDialog(Runnable onConfirmExit) {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Unsaved Changes")
+            .setMessage("You have unsaved changes. Do you want to save them before exiting?")
+            .setPositiveButton("Save & Exit", (dialog, which) -> {
+                saveCurrentPreferences();
+                onConfirmExit.run();
+            })
+            .setNegativeButton("Discard & Exit", (dialog, which) -> {
+                onConfirmExit.run();
+            })
+            .setNeutralButton("Cancel", null)
+            .show();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (getSupportFragmentManager().getBackStackEntryCount() > 0) {
+            getSupportFragmentManager().popBackStack();
+            handler.postDelayed(this::invalidateOptionsMenu, 100);
+        } else if (mHasChanges) {
+            showUnsavedChangesDialog(super::onBackPressed);
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    public String getDisplayPrefName() {
+        return "com.termux.x11_temp_session";
+    }
+
+    public static void cloneSharedPreferences(Context context, String sourceName, String destName) {
+        SharedPreferences source = context.getSharedPreferences(sourceName, Context.MODE_PRIVATE);
+        SharedPreferences dest = context.getSharedPreferences(destName, Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = dest.edit();
+        editor.clear(); // Clear destination first
+        for (java.util.Map.Entry<String, ?> entry : source.getAll().entrySet()) {
+            Object val = entry.getValue();
+            if (val instanceof Boolean) editor.putBoolean(entry.getKey(), (Boolean) val);
+            else if (val instanceof Float) editor.putFloat(entry.getKey(), (Float) val);
+            else if (val instanceof Integer) editor.putInt(entry.getKey(), (Integer) val);
+            else if (val instanceof Long) editor.putLong(entry.getKey(), (Long) val);
+            else if (val instanceof String) editor.putString(entry.getKey(), (String) val);
+        }
+        editor.commit();
+    }
+
+    private void cloneSharedPreferences(String sourceName, String destName) {
+        cloneSharedPreferences(this, sourceName, destName);
+    }
+
+    private void initializeDisplayPrefsIfEmpty(String sourcePrefName) {
+        if (sourcePrefName != null && sourcePrefName.contains("_display")) {
+            SharedPreferences displayPrefs = getSharedPreferences(sourcePrefName, Context.MODE_PRIVATE);
+            if (displayPrefs.getAll().isEmpty()) {
+                SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+                try {
+                    int d = Integer.parseInt(sourcePrefName.substring(sourcePrefName.indexOf("_display") + 8));
+                    String assignedTemplate = defaultPrefs.getString("display_assignment_" + d, "");
+                    String templatePrefsName = "";
+                    if (!assignedTemplate.isEmpty()) {
+                        templatePrefsName = assignedTemplate;
+                    } else {
+                        templatePrefsName = "com.termux.x11_preferences_template";
+                    }
+                    SharedPreferences templatePrefs = getSharedPreferences(templatePrefsName, Context.MODE_PRIVATE);
+                    if (!templatePrefs.getAll().isEmpty()) {
+                        cloneSharedPreferences(templatePrefsName, sourcePrefName);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private void saveCurrentPreferences() {
+        cloneSharedPreferences("com.termux.x11_temp_session", mSourcePrefName);
+        mHasChanges = false;
+        Toast.makeText(this, "Preferences saved.", Toast.LENGTH_SHORT).show();
+        
+        Intent intent = new Intent(ACTION_PREFERENCES_CHANGED);
+        intent.putExtra("fromBroadcast", true);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+    }
+
+    private String getTemplatePrefsName(String templateName) {
+        return templateName;
+    }
+
+    private boolean isValidTemplateName(String name) {
+        return name.matches("^[a-zA-Z0-9_-]+$");
+    }
+
+    private void showSaveTemplateDialog() {
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Template name");
+        layout.addView(input);
+
+        final TextView errorText = new TextView(this);
+        errorText.setTextColor(0xFFEF4444);
+        errorText.setVisibility(View.GONE);
+        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        layout.addView(errorText, lp);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Save Preference Template");
+        builder.setView(layout);
+        builder.setPositiveButton("Save", null);
+        builder.setNegativeButton("Cancel", null);
+
+        final AlertDialog dialog = builder.create();
+        dialog.show();
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String name = input.getText().toString().trim();
+            if (name.isEmpty()) {
+                errorText.setText("Name cannot be empty");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (name.equals("Default")) {
+                errorText.setText("The Default template is unwritable.");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (!isValidTemplateName(name)) {
+                errorText.setText("Invalid name. Please use only letters, numbers, hyphens (-), and underscores (_), with no spaces.");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            dialog.dismiss();
+            if (getCustomTemplates().contains(name)) {
+                new AlertDialog.Builder(this)
+                    .setTitle("Overwrite Template")
+                    .setMessage("A template named '" + name + "' already exists. Do you want to overwrite it?")
+                    .setPositiveButton("Overwrite", (d, w) -> saveTemplate(name))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            } else {
+                saveTemplate(name);
+            }
+        });
+    }
+
+    private void saveTemplate(String name) {
+        String templatePrefsName = getTemplatePrefsName(name);
+        cloneSharedPreferences("com.termux.x11_temp_session", templatePrefsName);
+        
+        SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+        java.util.Set<String> templates = new java.util.HashSet<>(getCustomTemplates());
+        templates.add(name);
+        
+        SharedPreferences.Editor editor = defaultPrefs.edit();
+        editor.putStringSet("custom_templates_list", templates);
+        
+        if (mSourcePrefName.contains("_display")) {
+            String suffix = mSourcePrefName.substring(mSourcePrefName.indexOf("_display") + 8);
+            try {
+                int displayNum = Integer.parseInt(suffix);
+                editor.putString("display_assignment_" + displayNum, name);
+            } catch (NumberFormatException ignored) {}
+        }
+        
+        editor.commit();
+        Toast.makeText(this, "Saved template: " + name, Toast.LENGTH_SHORT).show();
+    }
+
+    private java.util.Set<String> getCustomTemplates() {
+        SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+        java.util.Set<String> templates = defaultPrefs.getStringSet("custom_templates_list", null);
+        if (templates == null) {
+            templates = new java.util.HashSet<>();
+        }
+        
+        SharedPreferences defaultTemplatePrefs = getSharedPreferences("Default", Context.MODE_PRIVATE);
+        if (defaultTemplatePrefs.getAll().isEmpty()) {
+            cloneSharedPreferences(getPackageName() + "_preferences", "Default");
+        }
+        SharedPreferences templatePrefs = getSharedPreferences("com.termux.x11_preferences_template", Context.MODE_PRIVATE);
+        if (templatePrefs.getAll().isEmpty()) {
+            cloneSharedPreferences("Default", "com.termux.x11_preferences_template");
+        }
+        
+        return templates;
+    }
+
+    private View createManageTemplatesTitleView() {
+        android.widget.LinearLayout container = new android.widget.LinearLayout(this);
+        container.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        container.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        
+        int paddingLeftRight = (int) (24 * getResources().getDisplayMetrics().density);
+        int paddingTopBottom = (int) (16 * getResources().getDisplayMetrics().density);
+        container.setPadding(paddingLeftRight, paddingTopBottom, paddingLeftRight, paddingTopBottom);
+        
+        android.widget.TextView titleTv = new android.widget.TextView(this);
+        titleTv.setText("Manage Templates");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            titleTv.setTextAppearance(androidx.appcompat.R.style.TextAppearance_AppCompat_Title);
+        } else {
+            titleTv.setTextAppearance(this, androidx.appcompat.R.style.TextAppearance_AppCompat_Title);
+        }
+        
+        android.widget.LinearLayout.LayoutParams titleParams = new android.widget.LinearLayout.LayoutParams(
+            0,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+            1.0f
+        );
+        container.addView(titleTv, titleParams);
+        
+        android.util.TypedValue outValue = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValue, true);
+        int buttonPadding = (int) (8 * getResources().getDisplayMetrics().density);
+        
+        android.widget.ImageButton backupBtn = new android.widget.ImageButton(this);
+        backupBtn.setImageResource(android.R.drawable.ic_menu_share);
+        backupBtn.setBackgroundResource(outValue.resourceId);
+        backupBtn.setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding);
+        backupBtn.setOnClickListener(v -> {
+            if (mManageTemplatesDialog != null) mManageTemplatesDialog.dismiss();
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "termux_x11_backup.json");
+            startActivityForResult(intent, 2001);
+        });
+        container.addView(backupBtn);
+        
+        android.widget.ImageButton restoreBtn = new android.widget.ImageButton(this);
+        restoreBtn.setImageResource(android.R.drawable.ic_menu_revert);
+        restoreBtn.setBackgroundResource(outValue.resourceId);
+        restoreBtn.setPadding(buttonPadding, buttonPadding, buttonPadding, buttonPadding);
+        restoreBtn.setOnClickListener(v -> {
+            if (mManageTemplatesDialog != null) mManageTemplatesDialog.dismiss();
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            startActivityForResult(intent, 2002);
+        });
+        container.addView(restoreBtn);
+        
+        return container;
+    }
+
+    private void showManageTemplatesDialog() {
+        java.util.Set<String> customTemplates = getCustomTemplates();
+        java.util.Set<String> templatesSet = new java.util.HashSet<>(customTemplates);
+        templatesSet.add("Default");
+        
+        final String[] templatesArray = templatesSet.toArray(new String[0]);
+        java.util.Arrays.sort(templatesArray);
+        
+        SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+        String defaultTemplate = defaultPrefs.getString("default_template_name", "Default");
+        
+        String[] displayLabels = new String[templatesArray.length];
+        for (int i = 0; i < templatesArray.length; i++) {
+            String name = templatesArray[i];
+            StringBuilder sb = new StringBuilder(name);
+            boolean isDefault = name.equals(defaultTemplate);
+            
+            java.util.List<String> assignedDisplays = new java.util.ArrayList<>();
+            java.util.Set<String> openedSet = defaultPrefs.getStringSet("opened_displays_set", new java.util.HashSet<>());
+            java.util.List<String> sortedOpened = new java.util.ArrayList<>(openedSet);
+            java.util.Collections.sort(sortedOpened, (a, b) -> {
+                try {
+                    return Integer.compare(Integer.parseInt(a), Integer.parseInt(b));
+                } catch (NumberFormatException e) {
+                    return a.compareTo(b);
+                }
+            });
+            for (String dStr : sortedOpened) {
+                try {
+                    int d = Integer.parseInt(dStr);
+                    String assigned = defaultPrefs.getString("display_assignment_" + d, "");
+                    boolean isUsingThis = name.equals(assigned) || (isDefault && assigned.isEmpty());
+                    if (isUsingThis) {
+                        String prefName = "com.termux.x11_preferences_display" + d;
+                        SharedPreferences displayPrefs = getSharedPreferences(prefName, MODE_PRIVATE);
+                        String customLabel = displayPrefs.getString("displayCustomLabel", "");
+                        if (!customLabel.isEmpty()) {
+                            assignedDisplays.add(customLabel + " (" + d + ")");
+                        } else {
+                            assignedDisplays.add(String.valueOf(d));
+                        }
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+            
+            if (isDefault || !assignedDisplays.isEmpty()) {
+                sb.append(" (");
+                boolean hasText = false;
+                if (isDefault) {
+                    sb.append("Default");
+                    hasText = true;
+                }
+                if (!assignedDisplays.isEmpty()) {
+                    if (hasText) {
+                        sb.append(", ");
+                    }
+                    sb.append("Displays: ");
+                    for (int j = 0; j < assignedDisplays.size(); j++) {
+                        sb.append(assignedDisplays.get(j));
+                        if (j < assignedDisplays.size() - 1) sb.append(", ");
+                    }
+                }
+                sb.append(")");
+            }
+            displayLabels[i] = sb.toString();
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setCustomTitle(createManageTemplatesTitleView());
+        builder.setItems(displayLabels, (dialog, which) -> {
+            String selectedTemplate = templatesArray[which];
+            showTemplateOptionsDialog(selectedTemplate);
+        });
+        builder.setNegativeButton("Close", null);
+        mManageTemplatesDialog = builder.create();
+        mManageTemplatesDialog.show();
+    }
+
+    private void showTemplateOptionsDialog(String templateName) {
+        String[] options = {
+            "Set as Default Preference",
+            "Apply to Display",
+            "Rename",
+            "Delete"
+        };
+        
+        final boolean isDefault = templateName.equals("Default");
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Options for: " + templateName);
+        
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, options) {
+            @Override
+            public boolean isEnabled(int position) {
+                if (isDefault && (position == 2 || position == 3)) {
+                    return false;
+                }
+                return super.isEnabled(position);
+            }
+            
+            @NonNull
+            @Override
+            public android.view.View getView(int position, android.view.View convertView, @NonNull android.view.ViewGroup parent) {
+                android.view.View view = super.getView(position, convertView, parent);
+                android.widget.TextView textView = (android.widget.TextView) view.findViewById(android.R.id.text1);
+                if (isDefault && (position == 2 || position == 3)) {
+                    textView.setTextColor(android.graphics.Color.GRAY);
+                } else {
+                    android.util.TypedValue typedValue = new android.util.TypedValue();
+                    getContext().getTheme().resolveAttribute(android.R.attr.textColorPrimary, typedValue, true);
+                    if (typedValue.resourceId != 0) {
+                        textView.setTextColor(androidx.core.content.ContextCompat.getColor(getContext(), typedValue.resourceId));
+                    } else {
+                        textView.setTextColor(typedValue.data);
+                    }
+                }
+                return view;
+            }
+        };
+        
+        builder.setAdapter(adapter, (dialog, which) -> {
+            if (which == 0) {
+                cloneSharedPreferences(getTemplatePrefsName(templateName), "com.termux.x11_preferences_template");
+                SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+                defaultPrefs.edit().putString("default_template_name", templateName).commit();
+                Toast.makeText(this, "'" + templateName + "' is now the default template.", Toast.LENGTH_SHORT).show();
+            } else if (which == 1) {
+                showAssignToDisplayDialog(templateName);
+            } else if (which == 2) {
+                showRenameTemplateDialog(templateName);
+            } else if (which == 3) {
+                deleteTemplate(templateName);
+            }
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void showAssignToDisplayDialog(String templateName) {
+        SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+        java.util.Set<String> openedSet = defaultPrefs.getStringSet("opened_displays_set", new java.util.HashSet<>());
+        
+        if (openedSet.isEmpty()) {
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Apply to Display");
+            builder.setMessage("No displays have been opened yet. Start a display from Termux first.");
+            builder.setPositiveButton("OK", null);
+            builder.show();
+            return;
+        }
+        
+        final String[] displaysArray = openedSet.toArray(new String[0]);
+        java.util.Arrays.sort(displaysArray, (a, b) -> {
+            try {
+                return Integer.compare(Integer.parseInt(a), Integer.parseInt(b));
+            } catch (NumberFormatException e) {
+                return a.compareTo(b);
+            }
+        });
+        
+        String[] displayLabels = new String[displaysArray.length];
+        for (int i = 0; i < displaysArray.length; i++) {
+            String d = displaysArray[i];
+            String prefName = "com.termux.x11_preferences_display" + d;
+            SharedPreferences displayPrefs = getSharedPreferences(prefName, MODE_PRIVATE);
+            String customLabel = displayPrefs.getString("displayCustomLabel", "");
+            if (!customLabel.isEmpty()) {
+                displayLabels[i] = customLabel + " (Display " + d + ")";
+            } else {
+                displayLabels[i] = "Display " + d;
+            }
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Apply to Display");
+        builder.setItems(displayLabels, (dialog, which) -> {
+            String displayStr = displaysArray[which];
+            try {
+                int displayNum = Integer.parseInt(displayStr);
+                cloneSharedPreferences(getTemplatePrefsName(templateName), "com.termux.x11_preferences_display" + displayNum);
+                defaultPrefs.edit().putString("display_assignment_" + displayNum, templateName).commit();
+                Toast.makeText(this, "Template '" + templateName + "' applied to Display " + displayNum, Toast.LENGTH_SHORT).show();
+            } catch (NumberFormatException ignored) {}
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private void showRenameTemplateDialog(String templateName) {
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText(templateName);
+        input.setSelectAllOnFocus(true);
+        layout.addView(input);
+
+        final TextView errorText = new TextView(this);
+        errorText.setTextColor(0xFFEF4444);
+        errorText.setVisibility(View.GONE);
+        android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+            android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.topMargin = (int) (8 * getResources().getDisplayMetrics().density);
+        layout.addView(errorText, lp);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Rename Template");
+        builder.setView(layout);
+        builder.setPositiveButton("Rename", null);
+        builder.setNegativeButton("Cancel", null);
+
+        final AlertDialog dialog = builder.create();
+        dialog.show();
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            String newName = input.getText().toString().trim();
+            if (newName.isEmpty()) {
+                errorText.setText("Name cannot be empty");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (newName.equals("Default")) {
+                errorText.setText("The Default template is unwritable.");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (!isValidTemplateName(newName)) {
+                errorText.setText("Invalid name. Please use only letters, numbers, hyphens (-), and underscores (_), with no spaces.");
+                errorText.setVisibility(View.VISIBLE);
+                return;
+            }
+            if (newName.equals(templateName)) {
+                dialog.dismiss();
+                return;
+            }
+            
+            dialog.dismiss();
+            if (getCustomTemplates().contains(newName)) {
+                new AlertDialog.Builder(this)
+                    .setTitle("Overwrite Template")
+                    .setMessage("A template named '" + newName + "' already exists. Do you want to overwrite it?")
+                    .setPositiveButton("Overwrite", (d, w) -> renameTemplate(templateName, newName))
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            } else {
+                renameTemplate(templateName, newName);
+            }
+        });
+    }
+
+    private void renameTemplate(String oldName, String newName) {
+        cloneSharedPreferences(getTemplatePrefsName(oldName), getTemplatePrefsName(newName));
+        getSharedPreferences(getTemplatePrefsName(oldName), Context.MODE_PRIVATE).edit().clear().commit();
+        
+        SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+        java.util.Set<String> templates = new java.util.HashSet<>(getCustomTemplates());
+        templates.remove(oldName);
+        templates.add(newName);
+        
+        SharedPreferences.Editor editor = defaultPrefs.edit();
+        editor.putStringSet("custom_templates_list", templates);
+        
+        if (oldName.equals(defaultPrefs.getString("default_template_name", "Default"))) {
+            editor.putString("default_template_name", newName);
+        }
+        
+        for (int d = 1; d <= 5; d++) {
+            if (oldName.equals(defaultPrefs.getString("display_assignment_" + d, ""))) {
+                editor.putString("display_assignment_" + d, newName);
+            }
+        }
+        
+        editor.commit();
+        Toast.makeText(this, "Renamed template to: " + newName, Toast.LENGTH_SHORT).show();
+    }
+
+    private void deleteTemplate(String templateName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Delete Template");
+        builder.setMessage("Are you sure you want to delete template '" + templateName + "'?");
+        builder.setPositiveButton("Delete", (dialog, which) -> {
+            getSharedPreferences(getTemplatePrefsName(templateName), Context.MODE_PRIVATE).edit().clear().commit();
+            
+            SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+            java.util.Set<String> templates = new java.util.HashSet<>(getCustomTemplates());
+            templates.remove(templateName);
+            
+            SharedPreferences.Editor editor = defaultPrefs.edit();
+            editor.putStringSet("custom_templates_list", templates);
+            
+            if (templateName.equals(defaultPrefs.getString("default_template_name", "Default"))) {
+                editor.remove("default_template_name");
+            }
+            
+            for (int d = 1; d <= 5; d++) {
+                if (templateName.equals(defaultPrefs.getString("display_assignment_" + d, ""))) {
+                    editor.remove("display_assignment_" + d);
+                }
+            }
+            
+            editor.commit();
+            Toast.makeText(this, "Deleted template: " + templateName, Toast.LENGTH_SHORT).show();
+        });
+        builder.setNegativeButton("Cancel", null);
+        builder.show();
+    }
+
+    private String generateBackupJson() {
+        try {
+            org.json.JSONObject backup = new org.json.JSONObject();
+            
+            SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+            String defaultTemplate = defaultPrefs.getString("default_template_name", "Default");
+            backup.put("default_template_name", defaultTemplate);
+            
+            org.json.JSONObject assignments = new org.json.JSONObject();
+            for (int d = 1; d <= 5; d++) {
+                String assigned = defaultPrefs.getString("display_assignment_" + d, "");
+                if (!assigned.isEmpty()) {
+                    assignments.put(String.valueOf(d), assigned);
+                }
+            }
+            backup.put("display_assignments", assignments);
+            
+            java.util.Set<String> templatesSet = getCustomTemplates();
+            org.json.JSONArray templatesArray = new org.json.JSONArray();
+            org.json.JSONObject templatesData = new org.json.JSONObject();
+            
+            for (String name : templatesSet) {
+                templatesArray.put(name);
+                
+                SharedPreferences templatePrefs = getSharedPreferences(getTemplatePrefsName(name), MODE_PRIVATE);
+                org.json.JSONObject prefsObj = new org.json.JSONObject();
+                for (java.util.Map.Entry<String, ?> entry : templatePrefs.getAll().entrySet()) {
+                    prefsObj.put(entry.getKey(), entry.getValue());
+                }
+                templatesData.put(name, prefsObj);
+            }
+            
+            backup.put("templates_list", templatesArray);
+            backup.put("templates_data", templatesData);
+            
+            return backup.toString(4);
+        } catch (Exception e) {
+            Log.e("LoriePreferences", "Failed to generate backup JSON", e);
+            return null;
+        }
+    }
+
+    private void restoreBackupFromJson(String jsonStr) {
+        try {
+            org.json.JSONObject backup = new org.json.JSONObject(jsonStr);
+            SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", MODE_PRIVATE);
+            SharedPreferences.Editor defaultEditor = defaultPrefs.edit();
+            
+            String defaultTemplate = backup.optString("default_template_name", "Default");
+            defaultEditor.putString("default_template_name", defaultTemplate);
+            
+            org.json.JSONObject assignments = backup.optJSONObject("display_assignments");
+            for (int d = 1; d <= 5; d++) {
+                defaultEditor.remove("display_assignment_" + d);
+            }
+            if (assignments != null) {
+                java.util.Iterator<String> keys = assignments.keys();
+                while (keys.hasNext()) {
+                    String dStr = keys.next();
+                    String templateName = assignments.getString(dStr);
+                    defaultEditor.putString("display_assignment_" + dStr, templateName);
+                }
+            }
+            
+            org.json.JSONArray templatesArray = backup.optJSONArray("templates_list");
+            org.json.JSONObject templatesData = backup.optJSONObject("templates_data");
+            
+            java.util.Set<String> templatesSet = new java.util.HashSet<>();
+            if (templatesArray != null && templatesData != null) {
+                for (int i = 0; i < templatesArray.length(); i++) {
+                    String name = templatesArray.getString(i);
+                    templatesSet.add(name);
+                    
+                    org.json.JSONObject prefsObj = templatesData.optJSONObject(name);
+                    if (prefsObj != null) {
+                        SharedPreferences templatePrefs = getSharedPreferences(getTemplatePrefsName(name), MODE_PRIVATE);
+                        SharedPreferences.Editor tempEditor = templatePrefs.edit();
+                        tempEditor.clear();
+                        java.util.Iterator<String> keys = prefsObj.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            Object val = prefsObj.get(key);
+                            if (val instanceof Boolean) tempEditor.putBoolean(key, (Boolean) val);
+                            else if (val instanceof Double) tempEditor.putFloat(key, ((Double) val).floatValue());
+                            else if (val instanceof Integer) tempEditor.putInt(key, (Integer) val);
+                            else if (val instanceof Long) tempEditor.putLong(key, (Long) val);
+                            else if (val instanceof String) tempEditor.putString(key, (String) val);
+                        }
+                        tempEditor.commit();
+                    }
+                }
+            }
+            
+            defaultEditor.putStringSet("custom_templates_list", templatesSet);
+            defaultEditor.commit();
+            
+            if (!defaultTemplate.isEmpty()) {
+                cloneSharedPreferences(getTemplatePrefsName(defaultTemplate), "com.termux.x11_preferences_template");
+            }
+            
+            Toast.makeText(this, "Backup restored successfully!", Toast.LENGTH_SHORT).show();
+            updatePreferencesLayout();
+        } catch (Exception e) {
+            Log.e("LoriePreferences", "Failed to restore backup", e);
+            Toast.makeText(this, "Error: Invalid backup file format.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+            Uri uri = data.getData();
+            if (requestCode == 2001) {
+                String json = generateBackupJson();
+                if (json != null) {
+                    try (java.io.OutputStream os = getContentResolver().openOutputStream(uri)) {
+                        os.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        Toast.makeText(this, "Backup saved!", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Log.e("LoriePreferences", "Error writing backup", e);
+                        Toast.makeText(this, "Failed to save backup file.", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            } else if (requestCode == 2002) {
+                try (java.io.InputStream is = getContentResolver().openInputStream(uri);
+                     java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(is))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    restoreBackupFromJson(sb.toString());
+                } catch (Exception e) {
+                    Log.e("LoriePreferences", "Error reading backup", e);
+                    Toast.makeText(this, "Failed to read backup file.", Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
     }
 
     private void showFragment(PreferenceFragmentCompat fragment) {
@@ -236,7 +1024,8 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         public void onResume() {
             super.onResume();
             //noinspection DataFlowIssue
-            ((LoriePreferences) getActivity()).getSupportActionBar().setTitle(getPreferenceScreen().getTitle());
+            ((LoriePreferences) getActivity()).updateTitle(getPreferenceScreen().getTitle());
+            getActivity().invalidateOptionsMenu();
         }
 
         /** @noinspection SameParameterValue*/
@@ -370,6 +1159,21 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     && ContextCompat.checkSelfPermission(requireContext(), POST_NOTIFICATIONS) == PERMISSION_DENIED;
             setVisible("requestNotificationPermission", requestNotificationPermissionVisible);
+
+            if (getActivity() instanceof LoriePreferences) {
+                boolean isDisplaySpecific = ((LoriePreferences) getActivity()).mSourcePrefName.contains("_display");
+                setVisible("displayCustomLabel", isDisplaySpecific);
+            }
+
+            Preference customLabelPref = findPreference("displayCustomLabel");
+            if (customLabelPref != null) {
+                String val = prefs.get().getString("displayCustomLabel", "");
+                if (val.isEmpty()) {
+                    customLabelPref.setSummary("Not set");
+                } else {
+                    customLabelPref.setSummary(val);
+                }
+            }
         }
 
         /** @noinspection SameParameterValue*/
@@ -417,6 +1221,9 @@ public class LoriePreferences extends AppCompatActivity implements PreferenceFra
         @SuppressLint("ApplySharedPref")
         @Override
         public boolean onPreferenceChange(Preference preference, Object newValue) {
+            if (getActivity() instanceof LoriePreferences) {
+                ((LoriePreferences) getActivity()).mHasChanges = true;
+            }
             String key = preference.getKey();
             Log.e("Preferences", "changed preference: " + key);
             handler.removeCallbacks(updateLayout);

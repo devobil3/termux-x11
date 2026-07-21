@@ -71,32 +71,6 @@ For some reason some devices show screen with swapped colours, in this case you 
 termux-x11 :1 -force-bgra -xstartup "xfce4-session"
 ```
 
-## Multiple Simultaneous Displays
-
-This version of Termux:X11 supports running up to 5 independent X11 displays simultaneously (`:0`, `:1`, `:2`, `:3`, and `:4`). Each display runs in its own isolated Android process (`:display1` to `:display4`) for maximum stability and performance.
-
-### 1. Launching Multiple Displays
-In Termux, you can start different desktop environments or apps on different display numbers:
-```bash
-# Start a desktop on Display 0 (default)
-termux-x11 :0 -xstartup "xfce4-session" &
-
-# Start another desktop on Display 1 simultaneously
-termux-x11 :1 -xstartup "xfce4-session" &
-```
-
-### 2. The Dashboard
-When no display is connected (or when you launch the app directly), you will see the **Displays Dashboard**:
-* Shows all configured displays (`Display 0` to `Display 4`) along with their live connection status (**Offline**, **Running in Background**, or **Connected**).
-* Tap **"Switch To"** on any running display card to bring it to the foreground immediately.
-
-### 3. Quick Switching
-* **Floating Switcher Button**: Active displays overlay a draggable, semi-transparent switcher button. Tap it to expand a quick-access dock of active displays and switch between them instantly.
-* **Notification Drawer**: You can also use the quick-switch controls added to your Android notification drawer to toggle active displays.
-
-### 4. Independent Preferences
-Each display has its own preference file. You can configure display settings (resolution, scaling, touchpad emulation, etc.) independently. When you open the Preferences page (e.g. from a display's dashboard card), it will edit settings specifically for that display index.
-
 ## Using with proot environment
 If you plan to use the program with proot, keep in mind that you need to launch proot/proot-distro with the --shared-tmp option. 
 

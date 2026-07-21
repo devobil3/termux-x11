@@ -29,7 +29,7 @@
             android:id="@+id/stub"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#0A0A0F"
+            android:background="#000000"
             android:visibility="visible">
 
             <LinearLayout
@@ -74,94 +74,18 @@
                         android:layout_marginTop="4dp"/>
                 </LinearLayout>
 
-                <!-- Card for Display 0 -->
-                <LinearLayout
-                    android:id="@+id/card_display_0"
+                <!-- Placeholder for No Active Displays -->
+                <TextView
+                    android:id="@+id/dashboard_placeholder"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:background="@drawable/dashboard_card_background"
-                    android:padding="16dp"
+                    android:gravity="center"
+                    android:padding="32dp"
+                    android:text="No active displays running. Start a display server from Termux."
+                    android:textColor="#94A3B8"
+                    android:textSize="16sp"
                     android:layout_marginHorizontal="16dp"
-                    android:layout_marginVertical="6dp"
-                    android:gravity="center_vertical">
-
-                    <TextView
-                        android:id="@+id/display_title_0"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text=":0"
-                        android:textColor="#FFFFFF"
-                        android:textSize="24sp"
-                        android:textStyle="bold"
-                        android:layout_marginEnd="16dp"/>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Display 0"
-                            android:textColor="#E2E8F0"
-                            android:textSize="16sp"
-                            android:textStyle="bold"/>
-
-                        <LinearLayout
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical"
-                            android:layout_marginTop="4dp">
-
-                            <View
-                                android:id="@+id/status_dot_0"
-                                android:layout_width="8dp"
-                                android:layout_height="8dp"
-                                android:background="@drawable/status_dot"
-                                android:backgroundTint="#757575"
-                                android:layout_marginEnd="6dp"/>
-
-                            <TextView
-                                android:id="@+id/status_text_0"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Offline"
-                                android:textColor="#94A3B8"
-                                android:textSize="14sp"/>
-                        </LinearLayout>
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <ImageButton
-                            android:id="@+id/btn_settings_0"
-                            android:layout_width="40dp"
-                            android:layout_height="40dp"
-                            android:src="@drawable/ic_settings"
-                            android:background="?attr/selectableItemBackgroundBorderless"
-                            android:tint="#94A3B8"
-                            android:contentDescription="Settings"/>
-
-                        <Button
-                            android:id="@+id/btn_switch_0"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Switch To"
-                            android:visibility="gone"
-                            android:layout_marginStart="8dp"
-                            android:textAllCaps="false"
-                            android:textSize="13sp"
-                            android:backgroundTint="#3B82F6"/>
-                    </LinearLayout>
-                </LinearLayout>
+                    android:visibility="gone" />
 
                 <!-- Card for Display 1 -->
                 <LinearLayout
@@ -192,6 +116,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/display_label_1"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Display 1"
@@ -234,7 +159,7 @@
                             android:id="@+id/btn_settings_1"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:src="@drawable/ic_settings"
+                            android:src="@drawable/ic_extra_key_settings"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:tint="#94A3B8"
                             android:contentDescription="Settings"/>
@@ -248,7 +173,8 @@
                             android:layout_marginStart="8dp"
                             android:textAllCaps="false"
                             android:textSize="13sp"
-                            android:backgroundTint="#3B82F6"/>
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
                     </LinearLayout>
                 </LinearLayout>
 
@@ -281,6 +207,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/display_label_2"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Display 2"
@@ -323,7 +250,7 @@
                             android:id="@+id/btn_settings_2"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:src="@drawable/ic_settings"
+                            android:src="@drawable/ic_extra_key_settings"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:tint="#94A3B8"
                             android:contentDescription="Settings"/>
@@ -337,7 +264,8 @@
                             android:layout_marginStart="8dp"
                             android:textAllCaps="false"
                             android:textSize="13sp"
-                            android:backgroundTint="#3B82F6"/>
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
                     </LinearLayout>
                 </LinearLayout>
 
@@ -370,6 +298,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/display_label_3"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Display 3"
@@ -412,7 +341,7 @@
                             android:id="@+id/btn_settings_3"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:src="@drawable/ic_settings"
+                            android:src="@drawable/ic_extra_key_settings"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:tint="#94A3B8"
                             android:contentDescription="Settings"/>
@@ -426,7 +355,8 @@
                             android:layout_marginStart="8dp"
                             android:textAllCaps="false"
                             android:textSize="13sp"
-                            android:backgroundTint="#3B82F6"/>
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
                     </LinearLayout>
                 </LinearLayout>
 
@@ -459,6 +389,7 @@
                         android:orientation="vertical">
 
                         <TextView
+                            android:id="@+id/display_label_4"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Display 4"
@@ -501,7 +432,7 @@
                             android:id="@+id/btn_settings_4"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:src="@drawable/ic_settings"
+                            android:src="@drawable/ic_extra_key_settings"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:tint="#94A3B8"
                             android:contentDescription="Settings"/>
@@ -515,7 +446,554 @@
                             android:layout_marginStart="8dp"
                             android:textAllCaps="false"
                             android:textSize="13sp"
-                            android:backgroundTint="#3B82F6"/>
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 5 -->
+                <LinearLayout
+                    android:id="@+id/card_display_5"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_5"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":5"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_5"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 5"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_5"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_5"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_5"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_5"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 6 -->
+                <LinearLayout
+                    android:id="@+id/card_display_6"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_6"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":6"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_6"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 6"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_6"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_6"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_6"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_6"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 7 -->
+                <LinearLayout
+                    android:id="@+id/card_display_7"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_7"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":7"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_7"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 7"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_7"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_7"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_7"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_7"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 8 -->
+                <LinearLayout
+                    android:id="@+id/card_display_8"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_8"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":8"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_8"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 8"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_8"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_8"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_8"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_8"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 9 -->
+                <LinearLayout
+                    android:id="@+id/card_display_9"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_9"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":9"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_9"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 9"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_9"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_9"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_9"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_9"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Card for Display 10 -->
+                <LinearLayout
+                    android:id="@+id/card_display_10"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:background="@drawable/dashboard_card_background"
+                    android:padding="16dp"
+                    android:layout_marginHorizontal="16dp"
+                    android:layout_marginVertical="6dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/display_title_10"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=":10"
+                        android:textColor="#FFFFFF"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:layout_marginEnd="16dp"/>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/display_label_10"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Display 10"
+                            android:textColor="#E2E8F0"
+                            android:textSize="16sp"
+                            android:textStyle="bold"/>
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginTop="4dp">
+
+                            <View
+                                android:id="@+id/status_dot_10"
+                                android:layout_width="8dp"
+                                android:layout_height="8dp"
+                                android:background="@drawable/status_dot"
+                                android:backgroundTint="#757575"
+                                android:layout_marginEnd="6dp"/>
+
+                            <TextView
+                                android:id="@+id/status_text_10"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Offline"
+                                android:textColor="#94A3B8"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageButton
+                            android:id="@+id/btn_settings_10"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:src="@drawable/ic_extra_key_settings"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:tint="#94A3B8"
+                            android:contentDescription="Settings"/>
+
+                        <Button
+                            android:id="@+id/btn_switch_10"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Switch To"
+                            android:visibility="gone"
+                            android:layout_marginStart="8dp"
+                            android:textAllCaps="false"
+                            android:textSize="13sp"
+                            android:textColor="#FFFFFF"
+                            android:backgroundTint="#3A6EA5"/>
                     </LinearLayout>
                 </LinearLayout>
 
@@ -528,19 +1006,20 @@
 
                     <Button
                         android:id="@+id/help_button"
-                        style="@style/Widget.AppCompat.Button.Borderless"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/help_button_text"
-                        android:textColor="#94A3B8"/>
+                        android:text="@string/help_button_text" />
+
+                    <Space
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="10dp" />
 
                     <Button
                         android:id="@+id/exit_button"
-                        style="@style/Widget.AppCompat.Button.Borderless"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/exit_button_text"
-                        android:textColor="#EF4444"/>
+                        android:text="@string/exit_button_text" />
                 </LinearLayout>
 
             </LinearLayout>
@@ -552,7 +1031,7 @@
             android:layout_height="match_parent"
             android:orientation="vertical"
             android:gravity="center"
-            android:background="#0A0A0F"
+            android:background="#000000"
             android:visibility="gone"
             android:padding="24dp">
 
@@ -833,21 +1312,6 @@
                 android:contentDescription="Switch to Dashboard"
                 android:layout_marginEnd="4dp"/>
 
-            <!-- Active Display 0 Button -->
-            <Button
-                android:id="@+id/btn_quick_switch_0"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:text="0"
-                android:textColor="#FFFFFFFF"
-                android:textStyle="bold"
-                android:textSize="14sp"
-                android:background="@drawable/floating_switcher_button_bg"
-                android:layout_marginEnd="4dp"
-                android:padding="0dp"
-                android:minWidth="0dp"
-                android:minHeight="0dp"/>
-
             <!-- Active Display 1 Button -->
             <Button
                 android:id="@+id/btn_quick_switch_1"
@@ -899,6 +1363,96 @@
                 android:layout_width="36dp"
                 android:layout_height="36dp"
                 android:text="4"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 5 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_5"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="5"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 6 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_6"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="6"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 7 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_7"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="7"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 8 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_8"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="8"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 9 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_9"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="9"
+                android:textColor="#FFFFFFFF"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:background="@drawable/floating_switcher_button_bg"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"/>
+
+            <!-- Active Display 10 Button -->
+            <Button
+                android:id="@+id/btn_quick_switch_10"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="10"
                 android:textColor="#FFFFFFFF"
                 android:textStyle="bold"
                 android:textSize="14sp"

@@ -55,6 +55,7 @@
     </PreferenceScreen>
     <PreferenceScreen app:key="other">
         <SwitchPreferenceCompat app:key="clipboardEnable" app:defaultValue="true" />
+        <EditTextPreference app:key="displayCustomLabel" app:defaultValue="" />
         <Preference app:key="requestNotificationPermission" />
         <Preference app:key="configureResponseToUserActions" app:fragment="userActions" />
         <SwitchPreferenceCompat app:key="storeSecondaryDisplayPreferencesSeparately" app:defaultValue="false" />

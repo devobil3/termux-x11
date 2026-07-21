@@ -117,4 +117,7 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="lorie_pref_summary_requiresExactOrCustom">Requires "display resolution mode" to be "exact" or "custom"</string>
     <string name="lorie_pref_summary_requiresIntercepting">Requires intercepting system shortcuts with Dex mode or with Accessibility service</string>
     <string name="lorie_pref_summary_requiresTrackpadAndNative">Requires "Touchscreen input mode" to be "Trackpad" and "Display resolution mode" to be not "native"</string>
+
+    <string name="lorie_pref_displayCustomLabel">Custom Display Label</string>
+    <string name="lorie_pref_displayCustomLabel_summary">Assign a descriptive label to this display (e.g., Work Terminal)</string>
 </resources>

@@ -502,6 +502,7 @@ public class TouchInputHandler {
             case "open preferences":
                 return PendingIntent.getActivity(mActivity, requestCode, new Intent(mActivity, LoriePreferences.class) {{
                     putExtra("key", "value");
+                    putExtra("display_pref_name", mActivity.getDisplayPrefName());
                     setPackage(mActivity.getPackageName());
                     setAction(Intent.ACTION_MAIN);
                 }}, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

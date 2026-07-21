@@ -30,6 +30,7 @@ import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.os.SystemClock;
@@ -92,23 +93,29 @@ public class MainActivity extends AppCompatActivity {
     public static final String ACTION_DISPLAY_STATUS = "com.termux.x11.ACTION_DISPLAY_STATUS";
     public static final String ACTION_QUERY_DISPLAY_STATUS = "com.termux.x11.ACTION_QUERY_DISPLAY_STATUS";
 
-    private int mDisplayIndex = 0;
+    private int mDisplayIndex = -1;
+    private int mX11DisplayIndex = -1;
     private int mNotificationId = 7892;
 
     // Dashboard views
-    private final View[] mCards = new View[5];
-    private final View[] mStatusDots = new View[5];
-    private final TextView[] mStatusTexts = new TextView[5];
-    private final Button[] mSwitchButtons = new Button[5];
-    private final ImageButton[] mSettingsButtons = new ImageButton[5];
-    private final ICmdEntryInterface[] mActiveBinders = new ICmdEntryInterface[5];
+    private final View[] mCards = new View[6];
+    private final View[] mStatusDots = new View[6];
+    private final TextView[] mStatusTexts = new TextView[6];
+    private final Button[] mSwitchButtons = new Button[6];
+    private final ImageButton[] mSettingsButtons = new ImageButton[6];
+    private final TextView[] mDisplayTitles = new TextView[6];
+    private final ICmdEntryInterface[] mActiveBinders = new ICmdEntryInterface[6];
+
+    // Core Dynamic Mapping Store
+    private final int[] mSlotToDisplayIndex = new int[] {-1, -1, -1, -1, -1, -1};
 
     // Display states
-    private final boolean[] mDisplayConnected = new boolean[5];
-    private final boolean[] mDisplayForeground = new boolean[5];
+    private final boolean[] mDisplayConnected = new boolean[6];
+    private final boolean[] mDisplayForeground = new boolean[6];
+    private final boolean[] mDisplayRunningBackground = new boolean[6];
 
     public int getDisplayIndex() {
-        return mDisplayIndex;
+        return mX11DisplayIndex;
     }
 
     public void requestKeyInterceptorRecheck() {
@@ -120,13 +127,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public String getDisplayPrefName() {
-        String processName = LoriePreferences.getProcessName(this);
-        if (processName.contains(":display")) {
-            String suffix = processName.substring(processName.indexOf(":display") + 8);
-            return "com.termux.x11_preferences_display" + suffix;
-        } else {
+        if (mDisplayIndex == -1) {
             return getPackageName() + "_preferences";
+        } else {
+            return "com.termux.x11_preferences_display" + mX11DisplayIndex;
         }
+    }
+
+    @Override
+    public void startActivity(Intent intent) {
+        if (intent != null && intent.getComponent() != null && LoriePreferences.class.getName().equals(intent.getComponent().getClassName())) {
+            if (!intent.hasExtra("display_pref_name")) {
+                intent.putExtra("display_pref_name", getDisplayPrefName());
+            }
+        }
+        super.startActivity(intent);
+    }
+
+    @Override
+    public void startActivity(Intent intent, Bundle options) {
+        if (intent != null && intent.getComponent() != null && LoriePreferences.class.getName().equals(intent.getComponent().getClassName())) {
+            if (!intent.hasExtra("display_pref_name")) {
+                intent.putExtra("display_pref_name", getDisplayPrefName());
+            }
+        }
+        super.startActivity(intent, options);
     }
 
     private boolean isProcessRunning(String processNameSuffix) {
@@ -145,18 +170,23 @@ public class MainActivity extends AppCompatActivity {
     private void sendDisplayStatusBroadcast() {
         Intent intent = new Intent(ACTION_DISPLAY_STATUS);
         intent.putExtra("display_index", mDisplayIndex);
+        intent.putExtra("x11_display_index", mX11DisplayIndex);
         intent.putExtra("connected", LorieView.connected());
         intent.putExtra("foreground", hasWindowFocus());
+        intent.putExtra("running_background", mDisplayIndex != -1 && LorieView.connected());
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
     }
 
     private void updateDisplayStatuses() {
-        for (int i = 0; i < 5; i++) {
-            boolean isRunning = mActiveBinders[i] != null;
-            if (!isRunning) {
+        for (int i = 1; i <= 5; i++) {
+            boolean isAlive = mActiveBinders[i] != null || isProcessRunning(":display" + i);
+            if (!isAlive) {
+                mActiveBinders[i] = null;
+                mSlotToDisplayIndex[i] = -1;
                 mDisplayConnected[i] = false;
                 mDisplayForeground[i] = false;
+                mDisplayRunningBackground[i] = false;
             }
         }
         updateDashboardUI();
@@ -166,10 +196,36 @@ public class MainActivity extends AppCompatActivity {
         if (mDisplayIndex != -1) return;
 
         runOnUiThread(() -> {
-            for (int i = 0; i < 5; i++) {
+            boolean hasActiveDisplay = false;
+            for (int i = 1; i <= 5; i++) {
                 if (mCards[i] == null) continue;
 
-                boolean isRunning = mActiveBinders[i] != null;
+                int displayIndex = mSlotToDisplayIndex[i];
+                if (displayIndex == -1) {
+                    mCards[i].setVisibility(View.GONE);
+                    continue;
+                }
+
+                hasActiveDisplay = true;
+                mCards[i].setVisibility(View.VISIBLE);
+
+                if (mDisplayTitles[i] != null) {
+                    mDisplayTitles[i].setText(":" + displayIndex);
+                }
+                int labelId = getResources().getIdentifier("display_label_" + i, "id", getPackageName());
+                TextView labelView = findViewById(labelId);
+                if (labelView != null) {
+                    String prefName = "com.termux.x11_preferences_display" + displayIndex;
+                    SharedPreferences displayPrefs = getSharedPreferences(prefName, Context.MODE_PRIVATE);
+                    String customLabel = displayPrefs.getString("displayCustomLabel", "");
+                    if (!customLabel.isEmpty()) {
+                        labelView.setText(customLabel);
+                    } else {
+                        labelView.setText("Display " + displayIndex);
+                    }
+                }
+
+                boolean isRunning = mActiveBinders[i] != null || mDisplayRunningBackground[i];
 
                 if (!isRunning) {
                     mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#757575")));
@@ -182,10 +238,41 @@ public class MainActivity extends AppCompatActivity {
                     mStatusTexts[i].setTextColor(Color.parseColor("#4CAF50"));
                     mSwitchButtons[i].setVisibility(View.VISIBLE);
                 } else {
-                    mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#2196F3")));
+                    mStatusDots[i].setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#64B5F6")));
                     mStatusTexts[i].setText("Running in Background");
-                    mStatusTexts[i].setTextColor(Color.parseColor("#2196F3"));
+                    mStatusTexts[i].setTextColor(Color.parseColor("#64B5F6"));
                     mSwitchButtons[i].setVisibility(View.VISIBLE);
+                }
+            }
+
+            View placeholder = findViewById(R.id.dashboard_placeholder);
+            if (placeholder != null) {
+                placeholder.setVisibility(hasActiveDisplay ? View.GONE : View.VISIBLE);
+            }
+        });
+    }
+
+    private void updateQuickSwitchButtons() {
+        runOnUiThread(() -> {
+            for (int i = 1; i <= 5; i++) {
+                int quickId = getResources().getIdentifier("btn_quick_switch_" + i, "id", getPackageName());
+                Button btn = findViewById(quickId);
+                if (btn != null) {
+                    int displayIndex = mSlotToDisplayIndex[i];
+                    boolean isRunning = mActiveBinders[i] != null || mDisplayConnected[i] || mDisplayRunningBackground[i];
+                    if (isRunning && displayIndex != -1 && displayIndex != mX11DisplayIndex) {
+                        btn.setText(String.valueOf(displayIndex));
+                        btn.setVisibility(View.VISIBLE);
+                    } else {
+                        btn.setVisibility(View.GONE);
+                    }
+                }
+            }
+            for (int i = 6; i <= 10; i++) {
+                int quickId = getResources().getIdentifier("btn_quick_switch_" + i, "id", getPackageName());
+                Button btn = findViewById(quickId);
+                if (btn != null) {
+                    btn.setVisibility(View.GONE);
                 }
             }
         });
@@ -196,10 +283,25 @@ public class MainActivity extends AppCompatActivity {
         public void onReceive(Context context, Intent intent) {
             if (ACTION_DISPLAY_STATUS.equals(intent.getAction())) {
                 int index = intent.getIntExtra("display_index", -1);
-                if (index >= 0 && index < 5) {
+                if (index >= 1 && index <= 5) {
                     mDisplayConnected[index] = intent.getBooleanExtra("connected", false);
                     mDisplayForeground[index] = intent.getBooleanExtra("foreground", false);
+                    mDisplayRunningBackground[index] = intent.getBooleanExtra("running_background", false);
+                    int x11Idx = intent.getIntExtra("x11_display_index", -1);
+                    if (x11Idx != -1) {
+                        for (int i = 1; i <= 5; i++) {
+                            if (i != index && mSlotToDisplayIndex[i] == x11Idx) {
+                                mSlotToDisplayIndex[i] = -1;
+                                mActiveBinders[i] = null;
+                                mDisplayConnected[i] = false;
+                                mDisplayForeground[i] = false;
+                                mDisplayRunningBackground[i] = false;
+                            }
+                        }
+                        mSlotToDisplayIndex[index] = x11Idx;
+                    }
                     updateDashboardUI();
+                    updateQuickSwitchButtons();
                 }
             }
         }
@@ -209,7 +311,22 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (ACTION_QUERY_DISPLAY_STATUS.equals(intent.getAction())) {
-                sendDisplayStatusBroadcast();
+                if (mDisplayIndex == -1) {
+                    for (int i = 1; i <= 5; i++) {
+                        if (mSlotToDisplayIndex[i] != -1) {
+                            Intent statusIntent = new Intent(ACTION_DISPLAY_STATUS);
+                            statusIntent.putExtra("display_index", i);
+                            statusIntent.putExtra("x11_display_index", mSlotToDisplayIndex[i]);
+                            statusIntent.putExtra("running_background", mActiveBinders[i] != null || mDisplayRunningBackground[i]);
+                            statusIntent.putExtra("connected", mDisplayConnected[i]);
+                            statusIntent.putExtra("foreground", mDisplayForeground[i]);
+                            statusIntent.setPackage(getPackageName());
+                            sendBroadcast(statusIntent);
+                        }
+                    }
+                } else {
+                    sendDisplayStatusBroadcast();
+                }
             }
         }
     };
@@ -282,47 +399,85 @@ public class MainActivity extends AppCompatActivity {
             if (ACTION_START.equals(intent.getAction())) {
                 int displayIndex = intent.getIntExtra("display_index", 0);
                 
-                // Track all active binders in all processes (for switcher/status queries)
+                if (mDisplayIndex != -1) {
+                    if (displayIndex != mX11DisplayIndex) {
+                        return;
+                    }
+                    try {
+                        Log.v("LorieBroadcastReceiver", "Got new ACTION_START intent for display " + displayIndex);
+                        onReceiveConnection(intent);
+                    } catch (Exception e) {
+                        Log.e("MainActivity", "Something went wrong while we extracted connection details from binder.", e);
+                    }
+                    return;
+                }
+
+                // Coordinator / Dashboard slot assignment logic
                 try {
                     Bundle bundle = intent.getBundleExtra(null);
                     IBinder binder = bundle != null ? bundle.getBinder(null) : null;
                     if (binder != null) {
                         ICmdEntryInterface s = ICmdEntryInterface.Stub.asInterface(binder);
                         if (s != null) {
-                            mActiveBinders[displayIndex] = s;
-                            final int idx = displayIndex;
-                            s.asBinder().linkToDeath(() -> {
-                                mActiveBinders[idx] = null;
-                                runOnUiThread(() -> {
-                                    updateDisplayStatuses();
-                                    // Update quick switch buttons if switcher dock is visible
-                                    View switcherDock = findViewById(R.id.floating_switcher_dock);
-                                    if (switcherDock != null && switcherDock.getVisibility() == View.VISIBLE) {
-                                        updateQuickSwitchButtons(
-                                            findViewById(R.id.btn_quick_switch_0),
-                                            findViewById(R.id.btn_quick_switch_1),
-                                            findViewById(R.id.btn_quick_switch_2),
-                                            findViewById(R.id.btn_quick_switch_3),
-                                            findViewById(R.id.btn_quick_switch_4)
-                                        );
+                            // Mark this display as opened
+                            SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+                            java.util.Set<String> opened = new java.util.HashSet<>(defaultPrefs.getStringSet("opened_displays_set", new java.util.HashSet<>()));
+                            opened.add(String.valueOf(displayIndex));
+                            defaultPrefs.edit().putStringSet("opened_displays_set", opened).commit();
+
+                            int slotIndex = -1;
+                            for (int i = 1; i <= 5; i++) {
+                                if (mSlotToDisplayIndex[i] == displayIndex) {
+                                    slotIndex = i;
+                                    break;
+                                }
+                            }
+                            if (slotIndex == -1) {
+                                for (int i = 1; i <= 5; i++) {
+                                    if (mSlotToDisplayIndex[i] == -1) {
+                                        slotIndex = i;
+                                        mSlotToDisplayIndex[i] = displayIndex;
+                                        break;
                                     }
-                                });
-                            }, 0);
-                            runOnUiThread(() -> updateDisplayStatuses());
+                                }
+                            }
+                            
+                            if (slotIndex != -1) {
+                                for (int i = 1; i <= 5; i++) {
+                                    if (i != slotIndex && mSlotToDisplayIndex[i] == displayIndex) {
+                                        mSlotToDisplayIndex[i] = -1;
+                                        mActiveBinders[i] = null;
+                                        mDisplayConnected[i] = false;
+                                        mDisplayForeground[i] = false;
+                                        mDisplayRunningBackground[i] = false;
+                                    }
+                                }
+                                mActiveBinders[slotIndex] = s;
+                                final int finalSlot = slotIndex;
+                                s.asBinder().linkToDeath(() -> {
+                                    mActiveBinders[finalSlot] = null;
+                                    mSlotToDisplayIndex[finalSlot] = -1;
+                                    Intent deadIntent = new Intent(ACTION_DISPLAY_STATUS);
+                                    deadIntent.putExtra("display_index", finalSlot);
+                                    deadIntent.putExtra("x11_display_index", -1);
+                                    deadIntent.putExtra("running_background", false);
+                                    deadIntent.putExtra("connected", false);
+                                    deadIntent.putExtra("foreground", false);
+                                    deadIntent.setPackage(getPackageName());
+                                    sendBroadcast(deadIntent);
+                                    runOnUiThread(() -> {
+                                        updateDisplayStatuses();
+                                        updateQuickSwitchButtons();
+                                    });
+                                }, 0);
+                                runOnUiThread(() -> updateDisplayStatuses());
+                            } else {
+                                Log.e("MainActivity", "Rejected connection for Display " + displayIndex + ": All 5 slots occupied.");
+                            }
                         }
                     }
                 } catch (Exception e) {
                     Log.e("MainActivity", "Error registering binder for display " + displayIndex, e);
-                }
-
-                if (mDisplayIndex == -1 || displayIndex != mDisplayIndex) {
-                    return;
-                }
-                try {
-                    Log.v("LorieBroadcastReceiver", "Got new ACTION_START intent for display " + displayIndex);
-                    onReceiveConnection(intent);
-                } catch (Exception e) {
-                    Log.e("MainActivity", "Something went wrong while we extracted connection details from binder.", e);
                 }
             } else if (ACTION_STOP.equals(intent.getAction())) {
                 finishAffinity();
@@ -379,20 +534,56 @@ public class MainActivity extends AppCompatActivity {
             try {
                 mDisplayIndex = Integer.parseInt(processName.substring(processName.indexOf(":display") + 8));
             } catch (NumberFormatException ignored) {}
+            mX11DisplayIndex = getIntent().getIntExtra("display_index", mDisplayIndex);
         } else {
             mDisplayIndex = -1; // Dashboard
+            mX11DisplayIndex = -1;
         }
         mNotificationId = 7892 + mDisplayIndex;
 
-        prefs = new Prefs(this);
-        int modeValue = Integer.parseInt(prefs.touchMode.get()) - 1;
-        if (modeValue > 2)
-            prefs.touchMode.put("1");
+        SharedPreferences defaultTemplatePrefs = getSharedPreferences("Default", Context.MODE_PRIVATE);
+        if (defaultTemplatePrefs.getAll().isEmpty()) {
+            LoriePreferences.cloneSharedPreferences(this, getPackageName() + "_preferences", "Default");
+        }
+        SharedPreferences templatePrefs = getSharedPreferences("com.termux.x11_preferences_template", Context.MODE_PRIVATE);
+        if (templatePrefs.getAll().isEmpty()) {
+            LoriePreferences.cloneSharedPreferences(this, "Default", "com.termux.x11_preferences_template");
+        }
 
-        oldFullscreen = prefs.fullscreen.get();
-        oldHideCutout = prefs.hideCutout.get();
+        if (mDisplayIndex != -1) {
+            // Mark this display as opened
+            SharedPreferences defaultPrefs = getSharedPreferences(getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            java.util.Set<String> opened = new java.util.HashSet<>(defaultPrefs.getStringSet("opened_displays_set", new java.util.HashSet<>()));
+            opened.add(String.valueOf(mX11DisplayIndex));
+            defaultPrefs.edit().putStringSet("opened_displays_set", opened).commit();
 
-        prefs.get().registerOnSharedPreferenceChangeListener(preferencesChangedListener);
+            String prefName = getDisplayPrefName();
+            SharedPreferences displayPrefs = getSharedPreferences(prefName, Context.MODE_PRIVATE);
+            
+            String assignedTemplate = defaultPrefs.getString("display_assignment_" + mX11DisplayIndex, "");
+            String templatePrefsName = "";
+            if (!assignedTemplate.isEmpty()) {
+                templatePrefsName = assignedTemplate;
+            } else {
+                templatePrefsName = "com.termux.x11_preferences_template";
+            }
+            templatePrefs = getSharedPreferences(templatePrefsName, Context.MODE_PRIVATE);
+            
+            // Only clone if the display preference file is empty and template has settings
+            if (displayPrefs.getAll().isEmpty() && !templatePrefs.getAll().isEmpty()) {
+                SharedPreferences.Editor editor = displayPrefs.edit();
+                for (Map.Entry<String, ?> entry : templatePrefs.getAll().entrySet()) {
+                    Object val = entry.getValue();
+                    if (val instanceof Boolean) editor.putBoolean(entry.getKey(), (Boolean) val);
+                    else if (val instanceof Float) editor.putFloat(entry.getKey(), (Float) val);
+                    else if (val instanceof Integer) editor.putInt(entry.getKey(), (Integer) val);
+                    else if (val instanceof Long) editor.putLong(entry.getKey(), (Long) val);
+                    else if (val instanceof String) editor.putString(entry.getKey(), (String) val);
+                }
+                editor.apply();
+            }
+        }
+        initPreferences();
 
         getWindow().setFlags(FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS | FLAG_KEEP_SCREEN_ON | FLAG_TRANSLUCENT_STATUS, 0);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -401,38 +592,72 @@ public class MainActivity extends AppCompatActivity {
         frm = findViewById(R.id.frame);
 
         if (mDisplayIndex == -1) {
-            for (int i = 0; i < 5; i++) {
+            for (int i = 1; i <= 10; i++) {
                 int cardId = getResources().getIdentifier("card_display_" + i, "id", getPackageName());
                 int dotId = getResources().getIdentifier("status_dot_" + i, "id", getPackageName());
                 int textId = getResources().getIdentifier("status_text_" + i, "id", getPackageName());
                 int switchId = getResources().getIdentifier("btn_switch_" + i, "id", getPackageName());
                 int settingsId = getResources().getIdentifier("btn_settings_" + i, "id", getPackageName());
+                int titleId = getResources().getIdentifier("display_title_" + i, "id", getPackageName());
 
-                mCards[i] = findViewById(cardId);
-                mStatusDots[i] = findViewById(dotId);
-                mStatusTexts[i] = findViewById(textId);
-                mSwitchButtons[i] = findViewById(switchId);
-                mSettingsButtons[i] = findViewById(settingsId);
+                if (i <= 5) {
+                    mCards[i] = findViewById(cardId);
+                    mStatusDots[i] = findViewById(dotId);
+                    mStatusTexts[i] = findViewById(textId);
+                    mSwitchButtons[i] = findViewById(switchId);
+                    mSettingsButtons[i] = findViewById(settingsId);
+                    mDisplayTitles[i] = findViewById(titleId);
 
-                final int index = i;
-                mSettingsButtons[i].setOnClickListener(v -> {
-                    Intent prefIntent = new Intent(this, LoriePreferences.class);
-                    prefIntent.setAction(Intent.ACTION_MAIN);
-                    String prefName = "com.termux.x11_preferences_display" + index;
-                    prefIntent.putExtra("display_pref_name", prefName);
-                    startActivity(prefIntent);
-                });
+                    final int index = i;
+                    mSettingsButtons[i].setOnClickListener(v -> {
+                        Intent prefIntent = new Intent(this, LoriePreferences.class);
+                        prefIntent.setAction(Intent.ACTION_MAIN);
+                        int displayIndex = mSlotToDisplayIndex[index];
+                        if (displayIndex == -1) {
+                            displayIndex = index - 1;
+                        }
+                        String prefName = "com.termux.x11_preferences_display" + displayIndex;
+                        prefIntent.putExtra("display_pref_name", prefName);
+                        startActivity(prefIntent);
+                    });
 
-                mSwitchButtons[i].setOnClickListener(v -> {
-                    String className = "com.termux.x11.MainActivity" + index;
-                    Intent switchIntent = new Intent();
-                    switchIntent.setClassName(getPackageName(), className);
-                    switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                    startActivity(switchIntent);
-                });
+                    mSwitchButtons[i].setOnClickListener(v -> {
+                        int displayIndex = mSlotToDisplayIndex[index];
+                        if (displayIndex != -1) {
+                            String className = "com.termux.x11.MainActivity" + index;
+                            Intent switchIntent = new Intent();
+                            switchIntent.setClassName(getPackageName(), className);
+                            switchIntent.putExtra("display_index", displayIndex);
+                            ICmdEntryInterface s = mActiveBinders[index];
+                            if (s != null) {
+                                Bundle binderBundle = new Bundle();
+                                binderBundle.putBinder(null, s.asBinder());
+                                switchIntent.putExtra((String) null, binderBundle);
+                            }
+                            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            startActivity(switchIntent);
+                        }
+                    });
+
+                    int labelId = getResources().getIdentifier("display_label_" + i, "id", getPackageName());
+                    TextView labelView = findViewById(labelId);
+                    if (labelView != null) {
+                        labelView.setOnClickListener(v -> {
+                            int displayIndex = mSlotToDisplayIndex[index];
+                            if (displayIndex != -1) {
+                                showRenameDisplayDialog(displayIndex);
+                            }
+                        });
+                    }
+                } else {
+                    View card = findViewById(cardId);
+                    if (card != null) {
+                        card.setVisibility(View.GONE);
+                    }
+                }
             }
-            registerReceiver(displayStatusReceiver, new IntentFilter(ACTION_DISPLAY_STATUS), SDK_INT >= VERSION_CODES.TIRAMISU ? RECEIVER_EXPORTED : 0);
         }
+        registerReceiver(displayStatusReceiver, new IntentFilter(ACTION_DISPLAY_STATUS), SDK_INT >= VERSION_CODES.TIRAMISU ? RECEIVER_EXPORTED : 0);
 
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
@@ -481,8 +706,10 @@ public class MainActivity extends AppCompatActivity {
         // Taken from Stackoverflow answer https://stackoverflow.com/questions/7417123/android-how-to-adjust-layout-in-full-screen-mode-when-softkeyboard-is-visible/7509285#
         FullscreenWorkaround.assistActivity(this);
         mNotificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        mNotification = buildNotification();
-        mNotificationManager.notify(mNotificationId, mNotification);
+        if (mDisplayIndex != -1) {
+            mNotification = buildNotification();
+            mNotificationManager.notify(mNotificationId, mNotification);
+        }
 
         if (mDisplayIndex >= 0 && tryConnect()) {
             final View content = findViewById(android.R.id.content);
@@ -511,12 +738,48 @@ public class MainActivity extends AppCompatActivity {
         clientConnectedStateChanged();
     }
 
+    private void initPreferences() {
+        if (prefs != null) {
+            try {
+                prefs.get().unregisterOnSharedPreferenceChangeListener(preferencesChangedListener);
+            } catch (Exception ignored) {}
+        }
+
+        getIntent().putExtra("display_pref_name", getDisplayPrefName());
+        prefs = new Prefs(this);
+        
+        int modeValue = Integer.parseInt(prefs.touchMode.get()) - 1;
+        if (modeValue > 2)
+            prefs.touchMode.put("1");
+
+        oldFullscreen = prefs.fullscreen.get();
+        oldHideCutout = prefs.hideCutout.get();
+
+        prefs.get().registerOnSharedPreferenceChangeListener(preferencesChangedListener);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (mDisplayIndex != -1) {
+            int newDisplayIndex = intent.getIntExtra("display_index", -1);
+            if (newDisplayIndex != -1) {
+                mX11DisplayIndex = newDisplayIndex;
+                initPreferences();
+            }
+            onReceiveConnection(intent);
+        }
+    }
+
     @Override
     protected void onDestroy() {
-        unregisterReceiver(receiver);
-        if (mDisplayIndex == -1) {
-            unregisterReceiver(displayStatusReceiver);
+        cancelAutoHide();
+        if (mNotificationManager != null) {
+            mNotificationManager.cancel(mNotificationId);
         }
+        unregisterReceiver(receiver);
+        unregisterReceiver(displayStatusReceiver);
         unregisterReceiver(queryReceiver);
         unbindKeyInterceptor();
 
@@ -525,6 +788,7 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("display_index", mDisplayIndex);
         intent.putExtra("connected", false);
         intent.putExtra("foreground", false);
+        intent.putExtra("running_background", false);
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
 
@@ -643,6 +907,76 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private final Handler autoHideHandler = new Handler(Looper.getMainLooper());
+    private boolean isHidden = false;
+    private final Runnable autoHideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (mDisplayIndex == -1) return;
+            LinearLayout switcherLayout = findViewById(R.id.floating_switcher_layout);
+            LinearLayout dockLayout = findViewById(R.id.floating_switcher_dock);
+            if (switcherLayout == null || dockLayout == null) return;
+            if (dockLayout.getVisibility() == View.VISIBLE) return; // Don't hide if dock is open
+
+            float screenWidth = frm.getWidth();
+            float currentX = switcherLayout.getX();
+            float offset = switcherLayout.getWidth() / 2.0f;
+            float targetX;
+
+            if (currentX + switcherLayout.getWidth() / 2.0f < screenWidth / 2.0f) {
+                // Snapped to left
+                targetX = -offset;
+            } else {
+                // Snapped to right
+                targetX = screenWidth - offset;
+            }
+
+            switcherLayout.animate()
+                .x(targetX)
+                .alpha(0.4f)
+                .scaleX(0.7f)
+                .scaleY(0.7f)
+                .setDuration(300)
+                .start();
+            isHidden = true;
+        }
+    };
+
+    private void scheduleAutoHide() {
+        cancelAutoHide();
+        autoHideHandler.postDelayed(autoHideRunnable, 3000);
+    }
+
+    private void cancelAutoHide() {
+        autoHideHandler.removeCallbacks(autoHideRunnable);
+    }
+
+    private void showFully() {
+        if (!isHidden) return;
+        LinearLayout switcherLayout = findViewById(R.id.floating_switcher_layout);
+        if (switcherLayout == null) return;
+
+        float screenWidth = frm.getWidth();
+        float currentX = switcherLayout.getX();
+        float targetX = currentX;
+
+        // Bring back to screen bounds
+        if (currentX < 0) {
+            targetX = 0;
+        } else if (currentX + switcherLayout.getWidth() > screenWidth) {
+            targetX = screenWidth - switcherLayout.getWidth();
+        }
+
+        switcherLayout.animate()
+            .x(targetX)
+            .alpha(1.0f)
+            .scaleX(1.0f)
+            .scaleY(1.0f)
+            .setDuration(200)
+            .start();
+        isHidden = false;
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     void initFloatingSwitcher() {
         final ViewPager pager = getTerminalToolbarViewPager();
@@ -652,31 +986,88 @@ public class MainActivity extends AppCompatActivity {
         final View toggleBtn = findViewById(R.id.btn_switcher_toggle);
         final TextView txtDisplayIndex = findViewById(R.id.txt_switcher_display_index);
         if (txtDisplayIndex != null) {
-            txtDisplayIndex.setText(String.valueOf(mDisplayIndex));
+            txtDisplayIndex.setText(String.valueOf(mX11DisplayIndex));
         }
         final LinearLayout dockLayout = findViewById(R.id.floating_switcher_dock);
         final ImageButton dashboardBtn = findViewById(R.id.btn_switch_to_dashboard);
-        final Button quick0 = findViewById(R.id.btn_quick_switch_0);
-        final Button quick1 = findViewById(R.id.btn_quick_switch_1);
-        final Button quick2 = findViewById(R.id.btn_quick_switch_2);
-        final Button quick3 = findViewById(R.id.btn_quick_switch_3);
-        final Button quick4 = findViewById(R.id.btn_quick_switch_4);
 
-        toggleBtn.setOnClickListener(v -> {
-            boolean isDockVisible = dockLayout.getVisibility() == View.VISIBLE;
-            if (isDockVisible) {
-                dockLayout.setVisibility(View.GONE);
-            } else {
-                updateQuickSwitchButtons(quick0, quick1, quick2, quick3, quick4);
-                dockLayout.setVisibility(View.VISIBLE);
-                
-                // Make sure it remains inside screen limits when expanding
-                float maxX = frm.getWidth() - switcherLayout.getWidth();
-                float maxY = frm.getHeight() - switcherLayout.getHeight();
-                if (pager.getVisibility() == View.VISIBLE)
-                    maxY -= pager.getHeight();
-                switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), 0, maxX));
-                switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), 0, maxY));
+        toggleBtn.setOnTouchListener(new View.OnTouchListener() {
+            private float initialX;
+            private float initialY;
+            private float initialTouchX;
+            private float initialTouchY;
+            private boolean isDragging = false;
+            private static final int TOUCH_SLOP = 10;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        initialX = switcherLayout.getX();
+                        initialY = switcherLayout.getY();
+                        initialTouchX = event.getRawX();
+                        initialTouchY = event.getRawY();
+                        isDragging = false;
+                        cancelAutoHide();
+                        showFully();
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        float dx = event.getRawX() - initialTouchX;
+                        float dy = event.getRawY() - initialTouchY;
+                        if (!isDragging && (Math.abs(dx) > TOUCH_SLOP || Math.abs(dy) > TOUCH_SLOP)) {
+                            isDragging = true;
+                        }
+                        if (isDragging) {
+                            float newX = initialX + dx;
+                            float newY = initialY + dy;
+
+                            float maxX = frm.getWidth() - switcherLayout.getWidth();
+                            float maxY = frm.getHeight() - switcherLayout.getHeight();
+                            if (pager.getVisibility() == View.VISIBLE)
+                                maxY -= pager.getHeight();
+
+                            switcherLayout.setX(MathUtils.clamp(newX, 0, maxX));
+                            switcherLayout.setY(MathUtils.clamp(newY, 0, maxY));
+                        }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
+                        if (!isDragging) {
+                            boolean isDockVisible = dockLayout.getVisibility() == View.VISIBLE;
+                            if (isDockVisible) {
+                                dockLayout.setVisibility(View.GONE);
+                                scheduleAutoHide();
+                            } else {
+                                updateQuickSwitchButtons();
+                                dockLayout.setVisibility(View.VISIBLE);
+
+                                float maxX = frm.getWidth() - switcherLayout.getWidth();
+                                float maxY = frm.getHeight() - switcherLayout.getHeight();
+                                if (pager.getVisibility() == View.VISIBLE)
+                                    maxY -= pager.getHeight();
+                                switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), 0, maxX));
+                                switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), 0, maxY));
+                            }
+                        } else {
+                            float currentX = switcherLayout.getX();
+                            float screenWidth = frm.getWidth();
+                            float targetX;
+                            if (currentX + switcherLayout.getWidth() / 2.0f < screenWidth / 2.0f) {
+                                targetX = 0;
+                            } else {
+                                targetX = screenWidth - switcherLayout.getWidth();
+                            }
+
+                            switcherLayout.animate()
+                                .x(targetX)
+                                .setDuration(250)
+                                .withEndAction(() -> scheduleAutoHide())
+                                .start();
+                        }
+                        return true;
+                }
+                return false;
             }
         });
 
@@ -686,86 +1077,31 @@ public class MainActivity extends AppCompatActivity {
             switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(switchIntent);
             dockLayout.setVisibility(View.GONE);
+            scheduleAutoHide();
         });
 
-        quick0.setOnClickListener(v -> {
-            Intent switchIntent = new Intent();
-            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity0");
-            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(switchIntent);
-            dockLayout.setVisibility(View.GONE);
-        });
-
-        quick1.setOnClickListener(v -> {
-            Intent switchIntent = new Intent();
-            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity1");
-            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(switchIntent);
-            dockLayout.setVisibility(View.GONE);
-        });
-
-        quick2.setOnClickListener(v -> {
-            Intent switchIntent = new Intent();
-            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity2");
-            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(switchIntent);
-            dockLayout.setVisibility(View.GONE);
-        });
-
-        quick3.setOnClickListener(v -> {
-            Intent switchIntent = new Intent();
-            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity3");
-            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(switchIntent);
-            dockLayout.setVisibility(View.GONE);
-        });
-
-        quick4.setOnClickListener(v -> {
-            Intent switchIntent = new Intent();
-            switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity4");
-            switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(switchIntent);
-            dockLayout.setVisibility(View.GONE);
-        });
-
-        toggleBtn.setOnLongClickListener(v -> {
-            v.startDragAndDrop(ClipData.newPlainText("", ""), new View.DragShadowBuilder(toggleBtn) {
-                @Override
-                public void onDrawShadow(@NonNull Canvas canvas) {}
-            }, null, View.DRAG_FLAG_GLOBAL);
-
-            frm.setOnDragListener((v2, event) -> {
-                float maxX = frm.getWidth() - switcherLayout.getWidth();
-                float maxY = frm.getHeight() - switcherLayout.getHeight();
-                if (pager.getVisibility() == View.VISIBLE)
-                    maxY -= pager.getHeight();
-
-                switch (event.getAction()) {
-                    case DragEvent.ACTION_DRAG_LOCATION:
-                        float dX = event.getX() - toggleBtn.getWidth() / 2.0f;
-                        float dY = event.getY() - toggleBtn.getHeight() / 2.0f;
-                        switcherLayout.setX(MathUtils.clamp(dX, 0, maxX));
-                        switcherLayout.setY(MathUtils.clamp(dY, 0, maxY));
-                        break;
-                    case DragEvent.ACTION_DRAG_ENDED:
-                        switcherLayout.setX(MathUtils.clamp(switcherLayout.getX(), 0, maxX));
-                        switcherLayout.setY(MathUtils.clamp(switcherLayout.getY(), 0, maxY));
-                        break;
-                }
-                return true;
-            });
-            return true;
-        });
+        for (int i = 1; i <= 5; i++) {
+            int quickId = getResources().getIdentifier("btn_quick_switch_" + i, "id", getPackageName());
+            Button btn = findViewById(quickId);
+            if (btn != null) {
+                final int slotIndex = i;
+                btn.setOnClickListener(v -> {
+                    int displayIndex = mSlotToDisplayIndex[slotIndex];
+                    if (displayIndex != -1) {
+                        Intent switchIntent = new Intent();
+                        switchIntent.setClassName(getPackageName(), "com.termux.x11.MainActivity" + slotIndex);
+                        switchIntent.putExtra("display_index", displayIndex);
+                        switchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        startActivity(switchIntent);
+                        dockLayout.setVisibility(View.GONE);
+                        scheduleAutoHide();
+                    }
+                });
+            }
+        }
 
         updateFloatingSwitcherVisibility();
-    }
-
-    private void updateQuickSwitchButtons(Button q0, Button q1, Button q2, Button q3, Button q4) {
-        q0.setVisibility((mDisplayIndex != 0 && mActiveBinders[0] != null) ? View.VISIBLE : View.GONE);
-        q1.setVisibility((mDisplayIndex != 1 && mActiveBinders[1] != null) ? View.VISIBLE : View.GONE);
-        q2.setVisibility((mDisplayIndex != 2 && mActiveBinders[2] != null) ? View.VISIBLE : View.GONE);
-        q3.setVisibility((mDisplayIndex != 3 && mActiveBinders[3] != null) ? View.VISIBLE : View.GONE);
-        q4.setVisibility((mDisplayIndex != 4 && mActiveBinders[4] != null) ? View.VISIBLE : View.GONE);
+        scheduleAutoHide();
     }
 
     private void updateFloatingSwitcherVisibility() {
@@ -920,9 +1256,9 @@ public class MainActivity extends AppCompatActivity {
 
     void onReceiveConnection(Intent intent) {
         if (intent != null) {
-            int displayIndex = intent.getIntExtra("display_index", 0);
-            if (displayIndex != mDisplayIndex) {
-                Log.w("MainActivity", "Received connection intent for display " + displayIndex + " but current display is " + mDisplayIndex);
+            int displayIndex = intent.getIntExtra("display_index", -1);
+            if (mDisplayIndex != -1 && displayIndex != -1 && displayIndex != mX11DisplayIndex) {
+                Log.w("MainActivity", "Received connection intent for display " + displayIndex + " but current mapped display is " + mX11DisplayIndex);
                 return;
             }
         }
@@ -1052,10 +1388,13 @@ public class MainActivity extends AppCompatActivity {
         getLorieView().requestFocus();
 
         sendDisplayStatusBroadcast();
+        sendBroadcast(new Intent(ACTION_QUERY_DISPLAY_STATUS).setPackage(getPackageName()));
+        scheduleAutoHide();
     }
 
     @Override
     public void onPause() {
+        cancelAutoHide();
         if (mDisplayIndex == -1) {
             super.onPause();
             return;
@@ -1132,7 +1471,13 @@ public class MainActivity extends AppCompatActivity {
     @SuppressLint("ObsoleteSdkInt")
     Notification buildNotification() {
         int displayIndex = mNotificationId - 7892;
-        String title = "Termux:X11" + (displayIndex > 0 ? " (Display :" + displayIndex + ")" : "");
+        String displayLabel = "";
+        if (displayIndex > 0) {
+            String prefName = "com.termux.x11_preferences_display" + displayIndex;
+            SharedPreferences displayPrefs = getSharedPreferences(prefName, MODE_PRIVATE);
+            displayLabel = displayPrefs.getString("displayCustomLabel", "");
+        }
+        String title = "Termux:X11" + (displayIndex > 0 ? (" (" + (!displayLabel.isEmpty() ? displayLabel : "Display :" + displayIndex) + ")") : "");
         NotificationCompat.Builder builder =  new NotificationCompat.Builder(this, getNotificationChannel(mNotificationManager))
                 .setContentTitle(title)
                 .setSmallIcon(R.drawable.ic_x11_icon)
@@ -1323,7 +1668,7 @@ public class MainActivity extends AppCompatActivity {
                 offlineView.setVisibility(connected ? View.GONE : View.VISIBLE);
                 TextView offlineDesc = findViewById(R.id.txt_offline_display_desc);
                 if (offlineDesc != null) {
-                    offlineDesc.setText("Display " + mDisplayIndex + " is currently offline.\nStart the display server from Termux.");
+                    offlineDesc.setText("Display " + mX11DisplayIndex + " is currently offline.\nStart the display server from Termux.");
                 }
             }
             
@@ -1382,5 +1727,40 @@ public class MainActivity extends AppCompatActivity {
         if (connected && !showIMEWhileExternalConnected)
             inputMethodManager.hideSoftInputFromWindow(getWindow().getDecorView().getRootView().getWindowToken(), 0);
         getLorieView().requestFocus();
+    }
+
+    private void showRenameDisplayDialog(int displayIndex) {
+        String prefName = "com.termux.x11_preferences_display" + displayIndex;
+        SharedPreferences displayPrefs = getSharedPreferences(prefName, Context.MODE_PRIVATE);
+        String currentLabel = displayPrefs.getString("displayCustomLabel", "");
+
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Display " + displayIndex);
+        input.setText(currentLabel);
+        input.setSelectAllOnFocus(true);
+        layout.addView(input);
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Rename Display " + displayIndex)
+            .setView(layout)
+            .setPositiveButton("Save", (dialog, which) -> {
+                String newLabel = input.getText().toString().trim();
+                displayPrefs.edit().putString("displayCustomLabel", newLabel).commit();
+                updateDashboardUI();
+                
+                Intent intent = new Intent(ACTION_PREFERENCES_CHANGED);
+                intent.putExtra("key", "displayCustomLabel");
+                intent.putExtra("fromBroadcast", true);
+                intent.setPackage(getPackageName());
+                sendBroadcast(intent);
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 }
